@@ -3,10 +3,13 @@ dist
 dist-electron
 out
 data
+docs/
+*.xlsx
+*.xls
+*.csv
 .env
 .env.local
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-
