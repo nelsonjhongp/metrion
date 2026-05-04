@@ -92,6 +92,99 @@ function main() {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
 
+  // Create tables if needed
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS business_units (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(profile_id, name),
+      FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id INTEGER NOT NULL,
+      ruc TEXT NOT NULL,
+      name TEXT NOT NULL,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(profile_id, ruc),
+      FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id INTEGER NOT NULL,
+      business_unit_id INTEGER NOT NULL,
+      supplier_id INTEGER,
+      period_month INTEGER NOT NULL CHECK(period_month BETWEEN 1 AND 12),
+      period_year INTEGER NOT NULL,
+      purchase_date TEXT NOT NULL,
+      ruc TEXT,
+      supplier_name TEXT NOT NULL,
+      invoice_number TEXT,
+      amount REAL NOT NULL CHECK(amount >= 0),
+      payment TEXT,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+      FOREIGN KEY(business_unit_id) REFERENCES business_units(id) ON DELETE CASCADE,
+      FOREIGN KEY(supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_purchases_period
+      ON purchases(profile_id, business_unit_id, period_year, period_month);
+
+    CREATE TABLE IF NOT EXISTS monthly_sales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id INTEGER NOT NULL,
+      business_unit_id INTEGER NOT NULL,
+      period_month INTEGER NOT NULL CHECK(period_month BETWEEN 1 AND 12),
+      period_year INTEGER NOT NULL,
+      total_amount REAL NOT NULL DEFAULT 0 CHECK(total_amount >= 0),
+      saldo_anterior REAL NOT NULL DEFAULT 0,
+      saldo_siguiente REAL NOT NULL DEFAULT 0,
+      renta REAL NOT NULL DEFAULT 0,
+      igv_pago REAL NOT NULL DEFAULT 0,
+      base_igv_manual REAL NULL,
+      nota TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(profile_id, business_unit_id, period_month, period_year),
+      FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+      FOREIGN KEY(business_unit_id) REFERENCES business_units(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS monthly_closings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id INTEGER NOT NULL,
+      business_unit_id INTEGER NOT NULL,
+      period_month INTEGER NOT NULL CHECK(period_month BETWEEN 1 AND 12),
+      period_year INTEGER NOT NULL,
+      is_closed INTEGER NOT NULL DEFAULT 0,
+      closed_at TEXT,
+      reopened_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(profile_id, business_unit_id, period_month, period_year),
+      FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+      FOREIGN KEY(business_unit_id) REFERENCES business_units(id) ON DELETE CASCADE
+    );
+  `);
+
   const purchasesCsv = readFileSync(PURCHASES_CSV, "utf-8");
   const monthlyCsv = readFileSync(MONTHLY_CSV, "utf-8");
 
@@ -127,6 +220,18 @@ function main() {
   }
 
   // 3. Create suppliers from purchases_normalized.csv
+  function normalizeSupplierKey(name: string): string {
+    const normalized = name
+      .trim()
+      .toLowerCase()
+      .replace(/[-_]+$/, "")
+      .replace(/\s+/g, " ")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    if (normalized === "bcp") return name.trim();
+    return normalized;
+  }
+
   const supplierMap = new Map<string, SupplierKey>();
   const insertSupplier = db.prepare(
     "INSERT OR IGNORE INTO suppliers (profile_id, ruc, name) VALUES (?, ?, ?)",
@@ -141,7 +246,7 @@ function main() {
 
     if (!provider) continue;
 
-    const lookupKey = ruc || provider;
+    const lookupKey = ruc || normalizeSupplierKey(provider);
 
     if (!supplierMap.has(lookupKey)) {
       insertSupplier.run(profileId, lookupKey, provider);
@@ -205,7 +310,7 @@ function main() {
       }
 
       const purchaseDate = dateStr || `${year}-${String(month).padStart(2, "0")}-01`;
-      const supplierLookupKey = ruc || provider;
+      const supplierLookupKey = ruc || normalizeSupplierKey(provider);
       const supplierId = supplierMap.get(supplierLookupKey) ? (
         getSupplier.get(profileId, supplierLookupKey)?.id ?? null
       ) : null;
