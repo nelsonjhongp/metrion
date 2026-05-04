@@ -33,6 +33,27 @@ export type ClosingStatusQuery = {
   year: number;
 };
 
+export type MonthlyClosingQuery = ClosingStatusQuery;
+
+export type MonthlyClosing = {
+  id: number;
+  profileId: number;
+  businessUnitId: number;
+  periodMonth: number;
+  periodYear: number;
+  isClosed: boolean;
+  closedAt: string | null;
+  reopenedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MonthlyClosingChecklist = {
+  hasPurchases: boolean;
+  hasSales: boolean;
+  status: ClosingStatus;
+};
+
 export type PurchaseQuery = ClosingStatusQuery;
 
 export type Purchase = {
@@ -140,11 +161,27 @@ export type MonthlySaleFormValues = {
   observation: string;
 };
 
+export type MonthlySummaryQuery = ClosingStatusQuery;
+
+export type MonthlySummary = {
+  totalPurchases: number;
+  totalSales: number;
+  igv: number;
+  rent: number;
+  totalToPay: number;
+  nextBalance: number;
+};
+
 export type MetrionApi = {
   getContext: () => Promise<AppContext>;
   listProfiles: () => Promise<Profile[]>;
   listBusinessUnits: (profileId: number) => Promise<BusinessUnit[]>;
   getClosingStatus: (query: ClosingStatusQuery) => Promise<ClosingStatus>;
+  getClosingChecklist: (
+    query: MonthlyClosingQuery,
+  ) => Promise<MonthlyClosingChecklist>;
+  closeMonth: (query: MonthlyClosingQuery) => Promise<MonthlyClosing>;
+  reopenMonth: (query: MonthlyClosingQuery) => Promise<MonthlyClosing>;
   listPurchases: (query: PurchaseQuery) => Promise<MonthlyPurchases>;
   createPurchase: (input: PurchaseInput) => Promise<Purchase>;
   updatePurchase: (input: PurchaseUpdateInput) => Promise<Purchase>;
@@ -156,4 +193,5 @@ export type MetrionApi = {
   deleteSupplier: (id: number) => Promise<void>;
   getMonthlySale: (query: MonthlySaleQuery) => Promise<MonthlySale | null>;
   saveMonthlySale: (input: MonthlySaleInput) => Promise<MonthlySale>;
+  getMonthlySummary: (query: MonthlySummaryQuery) => Promise<MonthlySummary>;
 };

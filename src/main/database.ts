@@ -7,9 +7,14 @@ import type {
   BusinessUnit,
   ClosingStatus,
   ClosingStatusQuery,
+  MonthlyClosing,
+  MonthlyClosingChecklist,
+  MonthlyClosingQuery,
   MonthlySale,
   MonthlySaleInput,
   MonthlySaleQuery,
+  MonthlySummary,
+  MonthlySummaryQuery,
   MonthlyPurchases,
   Profile,
   Purchase,
@@ -105,6 +110,111 @@ export function getClosingStatus(query: ClosingStatusQuery): ClosingStatus {
     .get(query.profileId, query.businessUnitId, query.month, query.year);
 
   return row?.is_closed ? "closed" : "open";
+}
+
+export function getClosingChecklist(
+  query: MonthlyClosingQuery,
+): MonthlyClosingChecklist {
+  const safeQuery = monthlySaleQuerySchema.parse(query);
+  const db = getDatabase();
+  const purchaseCount =
+    db
+      .prepare<[number, number, number, number], { count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM purchases
+         WHERE profile_id = ?
+           AND business_unit_id = ?
+           AND period_month = ?
+           AND period_year = ?`,
+      )
+      .get(
+        safeQuery.profileId,
+        safeQuery.businessUnitId,
+        safeQuery.month,
+        safeQuery.year,
+      )?.count ?? 0;
+  const salesCount =
+    db
+      .prepare<[number, number, number, number], { count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM monthly_sales
+         WHERE profile_id = ?
+           AND business_unit_id = ?
+           AND period_month = ?
+           AND period_year = ?`,
+      )
+      .get(
+        safeQuery.profileId,
+        safeQuery.businessUnitId,
+        safeQuery.month,
+        safeQuery.year,
+      )?.count ?? 0;
+
+  return {
+    hasPurchases: purchaseCount > 0,
+    hasSales: salesCount > 0,
+    status: getClosingStatus(safeQuery),
+  };
+}
+
+export function closeMonth(query: MonthlyClosingQuery): MonthlyClosing {
+  const safeQuery = monthlySaleQuerySchema.parse(query);
+
+  getDatabase()
+    .prepare(
+      `INSERT INTO monthly_closings (
+         profile_id,
+         business_unit_id,
+         period_month,
+         period_year,
+         is_closed,
+         closed_at,
+         reopened_at
+       ) VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP, NULL)
+       ON CONFLICT(profile_id, business_unit_id, period_month, period_year)
+       DO UPDATE SET
+         is_closed = 1,
+         closed_at = CURRENT_TIMESTAMP,
+         reopened_at = NULL,
+         updated_at = CURRENT_TIMESTAMP`,
+    )
+    .run(
+      safeQuery.profileId,
+      safeQuery.businessUnitId,
+      safeQuery.month,
+      safeQuery.year,
+    );
+
+  return getMonthlyClosing(safeQuery);
+}
+
+export function reopenMonth(query: MonthlyClosingQuery): MonthlyClosing {
+  const safeQuery = monthlySaleQuerySchema.parse(query);
+
+  getDatabase()
+    .prepare(
+      `INSERT INTO monthly_closings (
+         profile_id,
+         business_unit_id,
+         period_month,
+         period_year,
+         is_closed,
+         reopened_at
+       ) VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+       ON CONFLICT(profile_id, business_unit_id, period_month, period_year)
+       DO UPDATE SET
+         is_closed = 0,
+         reopened_at = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP`,
+    )
+    .run(
+      safeQuery.profileId,
+      safeQuery.businessUnitId,
+      safeQuery.month,
+      safeQuery.year,
+    );
+
+  return getMonthlyClosing(safeQuery);
 }
 
 export function listPurchases(query: PurchaseQuery): MonthlyPurchases {
@@ -428,6 +538,62 @@ export function saveMonthlySale(input: MonthlySaleInput): MonthlySale {
   return saved;
 }
 
+export function getMonthlySummary(query: MonthlySummaryQuery): MonthlySummary {
+  const safeQuery = monthlySaleQuerySchema.parse(query);
+  const db = getDatabase();
+  const totalPurchases =
+    db
+      .prepare<
+        [number, number, number, number],
+        { total_amount: number | null }
+      >(
+        `SELECT COALESCE(SUM(amount), 0) AS total_amount
+         FROM purchases
+         WHERE profile_id = ?
+           AND business_unit_id = ?
+           AND period_month = ?
+           AND period_year = ?`,
+      )
+      .get(
+        safeQuery.profileId,
+        safeQuery.businessUnitId,
+        safeQuery.month,
+        safeQuery.year,
+      )?.total_amount ?? 0;
+  const totalSales =
+    db
+      .prepare<
+        [number, number, number, number],
+        { total_amount: number | null }
+      >(
+        `SELECT COALESCE(total_amount, 0) AS total_amount
+         FROM monthly_sales
+         WHERE profile_id = ?
+           AND business_unit_id = ?
+           AND period_month = ?
+           AND period_year = ?`,
+      )
+      .get(
+        safeQuery.profileId,
+        safeQuery.businessUnitId,
+        safeQuery.month,
+        safeQuery.year,
+      )?.total_amount ?? 0;
+  const igv = totalSales * 0.18;
+  const rent = totalSales * 0.015;
+  const totalToPay = igv + rent;
+  const nextBalance = totalSales - totalPurchases - totalToPay;
+
+  return {
+    totalPurchases: roundMoney(totalPurchases),
+    totalSales: roundMoney(totalSales),
+    igv: roundMoney(igv),
+    rent: roundMoney(rent),
+    totalToPay: roundMoney(totalToPay),
+    nextBalance: roundMoney(nextBalance),
+  };
+}
+
 export function getAppContext(): AppContext {
   const profiles = listProfiles();
   const selectedProfileId = profiles[0]?.id ?? null;
@@ -464,6 +630,34 @@ function assertPeriodOpen(query: PurchaseQuery): void {
   if (getClosingStatus(query) === "closed") {
     throw new Error("El mes esta cerrado.");
   }
+}
+
+function getMonthlyClosing(query: MonthlyClosingQuery): MonthlyClosing {
+  const row = getDatabase()
+    .prepare<[number, number, number, number], MonthlyClosingRow>(
+      `SELECT id,
+              profile_id,
+              business_unit_id,
+              period_month,
+              period_year,
+              is_closed,
+              closed_at,
+              reopened_at,
+              created_at,
+              updated_at
+       FROM monthly_closings
+       WHERE profile_id = ?
+         AND business_unit_id = ?
+         AND period_month = ?
+         AND period_year = ?`,
+    )
+    .get(query.profileId, query.businessUnitId, query.month, query.year);
+
+  if (!row) {
+    throw new Error("Cierre no encontrado.");
+  }
+
+  return mapMonthlyClosing(row);
 }
 
 function getPurchaseById(id: number): Purchase {
@@ -522,6 +716,10 @@ function normalizeSqliteError(error: unknown): Error {
   }
 
   return error instanceof Error ? error : new Error("Operacion invalida.");
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function migrate(db: Database.Database): void {
@@ -687,6 +885,19 @@ type MonthlySaleRow = {
   updated_at: string;
 };
 
+type MonthlyClosingRow = {
+  id: number;
+  profile_id: number;
+  business_unit_id: number;
+  period_month: number;
+  period_year: number;
+  is_closed: number;
+  closed_at: string | null;
+  reopened_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function mapBusinessUnit(row: BusinessUnitRow): BusinessUnit {
   return {
     id: row.id,
@@ -737,6 +948,21 @@ function mapMonthlySale(row: MonthlySaleRow): MonthlySale {
     periodYear: row.period_year,
     totalAmount: row.total_amount,
     observation: row.observation,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapMonthlyClosing(row: MonthlyClosingRow): MonthlyClosing {
+  return {
+    id: row.id,
+    profileId: row.profile_id,
+    businessUnitId: row.business_unit_id,
+    periodMonth: row.period_month,
+    periodYear: row.period_year,
+    isClosed: Boolean(row.is_closed),
+    closedAt: row.closed_at,
+    reopenedAt: row.reopened_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

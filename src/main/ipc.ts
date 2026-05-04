@@ -1,8 +1,10 @@
 import { ipcMain } from "electron";
 import type {
   ClosingStatusQuery,
+  MonthlyClosingQuery,
   MonthlySaleInput,
   MonthlySaleQuery,
+  MonthlySummaryQuery,
   PurchaseInput,
   PurchaseQuery,
   PurchaseUpdateInput,
@@ -12,18 +14,22 @@ import type {
   SupplierUpdateInput,
 } from "../shared/types";
 import {
+  closeMonth,
   createPurchase,
   createSupplier,
   deletePurchase,
   deleteSupplier,
   findSupplierByRuc,
   getAppContext,
+  getClosingChecklist,
   getClosingStatus,
   getMonthlySale,
+  getMonthlySummary,
   listBusinessUnits,
   listProfiles,
   listPurchases,
   listSuppliers,
+  reopenMonth,
   saveMonthlySale,
   updateSupplier,
   updatePurchase,
@@ -37,6 +43,15 @@ export function registerIpcHandlers(): void {
   );
   ipcMain.handle("closings:getStatus", (_event, query: ClosingStatusQuery) =>
     getClosingStatus(query),
+  );
+  ipcMain.handle("closings:getChecklist", (_event, query: MonthlyClosingQuery) =>
+    getClosingChecklist(query),
+  );
+  ipcMain.handle("closings:closeMonth", (_event, query: MonthlyClosingQuery) =>
+    closeMonth(query),
+  );
+  ipcMain.handle("closings:reopenMonth", (_event, query: MonthlyClosingQuery) =>
+    reopenMonth(query),
   );
   ipcMain.handle("purchases:list", (_event, query: PurchaseQuery) =>
     listPurchases(query),
@@ -70,5 +85,8 @@ export function registerIpcHandlers(): void {
   );
   ipcMain.handle("sales:saveMonthly", (_event, input: MonthlySaleInput) =>
     saveMonthlySale(input),
+  );
+  ipcMain.handle("summary:getMonthly", (_event, query: MonthlySummaryQuery) =>
+    getMonthlySummary(query),
   );
 }
