@@ -1,5 +1,5 @@
-import { Pencil, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, Pencil, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { SupplierDialog } from "../components/SupplierDialog";
@@ -7,6 +7,48 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useAppStore } from "../stores/app-store";
 import type { Supplier, SupplierFormValues } from "../../shared/types";
+
+function normalizeKey(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[-_]+$/, "")
+    .replace(/\s+/g, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+interface DupeGroup {
+  canonical: string;
+  names: string[];
+}
+
+function findDuplicateGroups(suppliers: Supplier[]): DupeGroup[] {
+  const groups = new Map<string, string[]>();
+
+  for (const s of suppliers) {
+    const key = normalizeKey(s.name);
+    if (!key) continue;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(s.name);
+    } else {
+      groups.set(key, [s.name]);
+    }
+  }
+
+  const result: DupeGroup[] = [];
+  for (const [, names] of groups) {
+    if (names.length > 1) {
+      const unique = [...new Set(names)];
+      if (unique.length > 1) {
+        result.push({ canonical: unique[0]!, names: unique });
+      }
+    }
+  }
+
+  return result;
+}
 
 export function SuppliersPage() {
   const profileId = useAppStore((state) => state.profileId);
@@ -110,6 +152,8 @@ export function SuppliersPage() {
     },
   ];
 
+  const dupeGroups = useMemo(() => findDuplicateGroups(suppliers), [suppliers]);
+
   return (
     <section className="flex h-full flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -118,6 +162,25 @@ export function SuppliersPage() {
           Nuevo proveedor
         </Button>
       </div>
+
+      {dupeGroups.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <span className="text-sm font-medium text-amber-800">
+              Posibles proveedores duplicados
+            </span>
+          </div>
+          <ul className="mt-1.5 space-y-0.5">
+            {dupeGroups.map((group, i) => (
+              <li className="text-xs text-amber-700" key={i}>
+                {group.names.join(" · ")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <Card className="flex min-h-0 flex-1 flex-col p-3">
         {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
         {isLoading ? (
