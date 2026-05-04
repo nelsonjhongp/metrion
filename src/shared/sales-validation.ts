@@ -7,6 +7,14 @@ const optionalText = z
   .nullable()
   .optional();
 
+const optionalMoney = z
+  .number()
+  .finite()
+  .min(0)
+  .nullable()
+  .optional()
+  .transform((value) => value ?? null);
+
 export const monthlySaleQuerySchema = z.object({
   profileId: z.number().int().positive(),
   businessUnitId: z.number().int().positive(),
@@ -16,7 +24,12 @@ export const monthlySaleQuerySchema = z.object({
 
 export const monthlySaleInputSchema = monthlySaleQuerySchema.extend({
   totalAmount: z.number().finite().min(0, "Monto invalido"),
-  observation: optionalText,
+  saldoAnterior: optionalMoney,
+  saldoSiguiente: optionalMoney,
+  renta: optionalMoney,
+  igvPago: optionalMoney,
+  baseIgvManual: optionalMoney,
+  nota: optionalText,
 });
 
 export const monthlySaleFormSchema = z.object({
@@ -32,6 +45,46 @@ export const monthlySaleFormSchema = z.object({
         message: "Monto invalido",
       },
     ),
-  observation: z.string().trim(),
+  saldoAnterior: z
+    .string()
+    .trim()
+    .refine(
+      (value) =>
+        value.length === 0 ||
+        (Number.isFinite(Number(value.replace(",", "."))) &&
+          Number(value.replace(",", ".")) >= 0),
+      { message: "Monto invalido" },
+    ),
+  saldoSiguiente: z
+    .string()
+    .trim()
+    .refine(
+      (value) =>
+        value.length === 0 ||
+        (Number.isFinite(Number(value.replace(",", "."))) &&
+          Number(value.replace(",", ".")) >= 0),
+      { message: "Monto invalido" },
+    ),
+  renta: z
+    .string()
+    .trim()
+    .refine(
+      (value) =>
+        value.length === 0 ||
+        (Number.isFinite(Number(value.replace(",", "."))) &&
+          Number(value.replace(",", ".")) >= 0),
+      { message: "Monto invalido" },
+    ),
+  igvPago: z
+    .string()
+    .trim()
+    .refine(
+      (value) =>
+        value.length === 0 ||
+        (Number.isFinite(Number(value.replace(",", "."))) &&
+          Number(value.replace(",", ".")) >= 0),
+      { message: "Monto invalido" },
+    ),
+  nota: z.string().trim(),
 });
 

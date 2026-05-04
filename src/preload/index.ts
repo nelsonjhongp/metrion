@@ -5,7 +5,6 @@ import type {
   MonthlyClosingQuery,
   MonthlySaleInput,
   MonthlySaleQuery,
-  MonthlySummaryQuery,
   PurchaseInput,
   PurchaseQuery,
   PurchaseUpdateInput,
@@ -48,8 +47,6 @@ const api: MetrionApi = {
     ipcRenderer.invoke("sales:getMonthly", query),
   saveMonthlySale: (input: MonthlySaleInput) =>
     ipcRenderer.invoke("sales:saveMonthly", input),
-  getMonthlySummary: (query: MonthlySummaryQuery) =>
-    ipcRenderer.invoke("summary:getMonthly", query),
 };
 
 contextBridge.exposeInMainWorld("metrion", api);

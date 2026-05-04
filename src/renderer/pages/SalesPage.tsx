@@ -1,13 +1,31 @@
 import { useEffect, useState } from "react";
-import { monthlySaleFormSchema } from "../../shared/sales-validation";
-import type { MonthlySaleFormValues } from "../../shared/types";
+import { z } from "zod";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useAppStore } from "../stores/app-store";
 
-const emptyValues: MonthlySaleFormValues = {
+const saleFormSchema = z.object({
+  totalAmount: z
+    .string()
+    .trim()
+    .min(1, "Monto requerido")
+    .refine(
+      (value) =>
+        Number.isFinite(Number(value.replace(",", "."))) &&
+        Number(value.replace(",", ".")) >= 0,
+      { message: "Monto invalido" },
+    ),
+  nota: z.string().trim(),
+});
+
+type SaleFormValues = {
+  totalAmount: string;
+  nota: string;
+};
+
+const emptyValues: SaleFormValues = {
   totalAmount: "",
-  observation: "",
+  nota: "",
 };
 
 export function SalesPage() {
@@ -19,7 +37,7 @@ export function SalesPage() {
     year,
   } = useAppStore();
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<MonthlySaleFormValues>(emptyValues);
+  const [form, setForm] = useState<SaleFormValues>(emptyValues);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
@@ -47,7 +65,7 @@ export function SalesPage() {
           sale
             ? {
                 totalAmount: String(sale.totalAmount),
-                observation: sale.observation ?? "",
+                nota: sale.nota ?? "",
               }
             : emptyValues,
         );
@@ -67,7 +85,7 @@ export function SalesPage() {
       return;
     }
 
-    const parsed = monthlySaleFormSchema.safeParse(form);
+    const parsed = saleFormSchema.safeParse(form);
 
     if (!parsed.success) {
       setSavedMessage(null);
@@ -86,11 +104,11 @@ export function SalesPage() {
         month,
         year,
         totalAmount: Number(parsed.data.totalAmount.replace(",", ".")),
-        observation: emptyToNull(parsed.data.observation),
+        nota: emptyToNull(parsed.data.nota),
       });
       setForm({
         totalAmount: String(saved.totalAmount),
-        observation: saved.observation ?? "",
+        nota: saved.nota ?? "",
       });
       setSavedMessage("Guardado");
     } catch (saveError) {
@@ -125,19 +143,19 @@ export function SalesPage() {
           />
         </label>
         <label className="block">
-          <span className="text-sm font-medium">Observacion</span>
+          <span className="text-sm font-medium">Nota</span>
           <textarea
             className="field mt-1 h-24 resize-none py-2"
             disabled={isClosed || isLoading}
             onChange={(event) => {
               setForm((current) => ({
                 ...current,
-                observation: event.target.value,
+                nota: event.target.value,
               }));
               setSavedMessage(null);
             }}
             placeholder="Opcional"
-            value={form.observation}
+            value={form.nota}
           />
         </label>
         <div className="flex items-center gap-3">
@@ -166,4 +184,3 @@ function emptyToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
-

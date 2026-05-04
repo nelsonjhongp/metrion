@@ -13,8 +13,6 @@ import type {
   MonthlySale,
   MonthlySaleInput,
   MonthlySaleQuery,
-  MonthlySummary,
-  MonthlySummaryQuery,
   MonthlyPurchases,
   Profile,
   Purchase,
@@ -475,16 +473,21 @@ export function getMonthlySale(query: MonthlySaleQuery): MonthlySale | null {
   const safeQuery = monthlySaleQuerySchema.parse(query);
   const row = getDatabase()
     .prepare<[number, number, number, number], MonthlySaleRow>(
-      `SELECT id,
-              profile_id,
-              business_unit_id,
-              period_month,
-              period_year,
-              total_amount,
-              observation,
-              created_at,
-              updated_at
-       FROM monthly_sales
+       `SELECT id,
+               profile_id,
+               business_unit_id,
+               period_month,
+               period_year,
+               total_amount,
+               saldo_anterior,
+               saldo_siguiente,
+               renta,
+               igv_pago,
+               base_igv_manual,
+               nota,
+               created_at,
+               updated_at
+        FROM monthly_sales
        WHERE profile_id = ?
          AND business_unit_id = ?
          AND period_month = ?
@@ -512,12 +515,22 @@ export function saveMonthlySale(input: MonthlySaleInput): MonthlySale {
          period_month,
          period_year,
          total_amount,
-         observation
-       ) VALUES (?, ?, ?, ?, ?, ?)
+         saldo_anterior,
+         saldo_siguiente,
+         renta,
+         igv_pago,
+         base_igv_manual,
+         nota
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(profile_id, business_unit_id, period_month, period_year)
        DO UPDATE SET
          total_amount = excluded.total_amount,
-         observation = excluded.observation,
+         saldo_anterior = excluded.saldo_anterior,
+         saldo_siguiente = excluded.saldo_siguiente,
+         renta = excluded.renta,
+         igv_pago = excluded.igv_pago,
+         base_igv_manual = excluded.base_igv_manual,
+         nota = excluded.nota,
          updated_at = CURRENT_TIMESTAMP`,
     )
     .run(
@@ -526,72 +539,21 @@ export function saveMonthlySale(input: MonthlySaleInput): MonthlySale {
       safeInput.month,
       safeInput.year,
       safeInput.totalAmount,
-      safeInput.observation ?? null,
+      safeInput.saldoAnterior ?? 0,
+      safeInput.saldoSiguiente ?? 0,
+      safeInput.renta ?? 0,
+      safeInput.igvPago ?? 0,
+      safeInput.baseIgvManual ?? null,
+      safeInput.nota ?? null,
     );
 
   const saved = getMonthlySale(safeInput);
 
-  if (!saved) {
+   if (!saved) {
     throw new Error("No se pudo guardar la venta.");
   }
 
   return saved;
-}
-
-export function getMonthlySummary(query: MonthlySummaryQuery): MonthlySummary {
-  const safeQuery = monthlySaleQuerySchema.parse(query);
-  const db = getDatabase();
-  const totalPurchases =
-    db
-      .prepare<
-        [number, number, number, number],
-        { total_amount: number | null }
-      >(
-        `SELECT COALESCE(SUM(amount), 0) AS total_amount
-         FROM purchases
-         WHERE profile_id = ?
-           AND business_unit_id = ?
-           AND period_month = ?
-           AND period_year = ?`,
-      )
-      .get(
-        safeQuery.profileId,
-        safeQuery.businessUnitId,
-        safeQuery.month,
-        safeQuery.year,
-      )?.total_amount ?? 0;
-  const totalSales =
-    db
-      .prepare<
-        [number, number, number, number],
-        { total_amount: number | null }
-      >(
-        `SELECT COALESCE(total_amount, 0) AS total_amount
-         FROM monthly_sales
-         WHERE profile_id = ?
-           AND business_unit_id = ?
-           AND period_month = ?
-           AND period_year = ?`,
-      )
-      .get(
-        safeQuery.profileId,
-        safeQuery.businessUnitId,
-        safeQuery.month,
-        safeQuery.year,
-      )?.total_amount ?? 0;
-  const igv = totalSales * 0.18;
-  const rent = totalSales * 0.015;
-  const totalToPay = igv + rent;
-  const nextBalance = totalSales - totalPurchases - totalToPay;
-
-  return {
-    totalPurchases: roundMoney(totalPurchases),
-    totalSales: roundMoney(totalSales),
-    igv: roundMoney(igv),
-    rent: roundMoney(rent),
-    totalToPay: roundMoney(totalToPay),
-    nextBalance: roundMoney(nextBalance),
-  };
 }
 
 export function getAppContext(): AppContext {
@@ -718,10 +680,6 @@ function normalizeSqliteError(error: unknown): Error {
   return error instanceof Error ? error : new Error("Operacion invalida.");
 }
 
-function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
 function migrate(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS profiles (
@@ -785,7 +743,12 @@ function migrate(db: Database.Database): void {
       period_month INTEGER NOT NULL CHECK(period_month BETWEEN 1 AND 12),
       period_year INTEGER NOT NULL,
       total_amount REAL NOT NULL DEFAULT 0 CHECK(total_amount >= 0),
-      observation TEXT,
+      saldo_anterior REAL NOT NULL DEFAULT 0,
+      saldo_siguiente REAL NOT NULL DEFAULT 0,
+      renta REAL NOT NULL DEFAULT 0,
+      igv_pago REAL NOT NULL DEFAULT 0,
+      base_igv_manual REAL NULL,
+      nota TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(profile_id, business_unit_id, period_month, period_year),
@@ -809,6 +772,30 @@ function migrate(db: Database.Database): void {
       FOREIGN KEY(business_unit_id) REFERENCES business_units(id) ON DELETE CASCADE
     );
   `);
+
+  db.pragma("foreign_keys = OFF");
+
+    const columns = [
+      { name: "saldo_anterior", sql: "ALTER TABLE monthly_sales ADD COLUMN saldo_anterior REAL NOT NULL DEFAULT 0" },
+      { name: "saldo_siguiente", sql: "ALTER TABLE monthly_sales ADD COLUMN saldo_siguiente REAL NOT NULL DEFAULT 0" },
+      { name: "renta", sql: "ALTER TABLE monthly_sales ADD COLUMN renta REAL NOT NULL DEFAULT 0" },
+      { name: "igv_pago", sql: "ALTER TABLE monthly_sales ADD COLUMN igv_pago REAL NOT NULL DEFAULT 0" },
+      { name: "nota", sql: "ALTER TABLE monthly_sales ADD COLUMN nota TEXT" },
+      { name: "base_igv_manual", sql: "ALTER TABLE monthly_sales ADD COLUMN base_igv_manual REAL NULL" },
+    ];
+
+  const existingCols = db
+    .prepare<[], { name: string }>("PRAGMA table_info(monthly_sales)")
+    .all()
+    .map((row) => row.name);
+
+  for (const col of columns) {
+    if (!existingCols.includes(col.name)) {
+      db.exec(col.sql);
+    }
+  }
+
+  db.pragma("foreign_keys = ON");
 }
 
 function seed(db: Database.Database): void {
@@ -880,7 +867,12 @@ type MonthlySaleRow = {
   period_month: number;
   period_year: number;
   total_amount: number;
-  observation: string | null;
+  saldo_anterior: number;
+  saldo_siguiente: number;
+  renta: number;
+  igv_pago: number;
+  base_igv_manual: number | null;
+  nota: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -940,6 +932,7 @@ function mapSupplier(row: SupplierRow): Supplier {
 }
 
 function mapMonthlySale(row: MonthlySaleRow): MonthlySale {
+  // baseIgv will be calculated by calculateMonthlySummary
   return {
     id: row.id,
     profileId: row.profile_id,
@@ -947,7 +940,13 @@ function mapMonthlySale(row: MonthlySaleRow): MonthlySale {
     periodMonth: row.period_month,
     periodYear: row.period_year,
     totalAmount: row.total_amount,
-    observation: row.observation,
+    saldoAnterior: row.saldo_anterior,
+    saldoSiguiente: row.saldo_siguiente,
+    renta: row.renta,
+    igvPago: row.igv_pago,
+    baseIgv: 0,
+    baseIgvManual: row.base_igv_manual,
+    nota: row.nota,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

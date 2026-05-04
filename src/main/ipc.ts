@@ -4,7 +4,6 @@ import type {
   MonthlyClosingQuery,
   MonthlySaleInput,
   MonthlySaleQuery,
-  MonthlySummaryQuery,
   PurchaseInput,
   PurchaseQuery,
   PurchaseUpdateInput,
@@ -24,7 +23,6 @@ import {
   getClosingChecklist,
   getClosingStatus,
   getMonthlySale,
-  getMonthlySummary,
   listBusinessUnits,
   listProfiles,
   listPurchases,
@@ -85,8 +83,5 @@ export function registerIpcHandlers(): void {
   );
   ipcMain.handle("sales:saveMonthly", (_event, input: MonthlySaleInput) =>
     saveMonthlySale(input),
-  );
-  ipcMain.handle("summary:getMonthly", (_event, query: MonthlySummaryQuery) =>
-    getMonthlySummary(query),
   );
 }

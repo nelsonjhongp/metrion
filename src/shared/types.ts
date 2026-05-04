@@ -146,30 +146,35 @@ export type MonthlySale = {
   periodMonth: number;
   periodYear: number;
   totalAmount: number;
-  observation: string | null;
+  saldoAnterior: number;
+  saldoSiguiente: number;
+  renta: number;
+  igvPago: number;
+  baseIgv: number;
+  baseIgvManual: number | null;
+  nota: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
 export type MonthlySaleInput = MonthlySaleQuery & {
   totalAmount: number;
-  observation?: string | null;
+  saldoAnterior?: number | null;
+  saldoSiguiente?: number | null;
+  renta?: number | null;
+  igvPago?: number | null;
+  baseIgvManual?: number | null;
+  nota?: string | null;
 };
 
 export type MonthlySaleFormValues = {
   totalAmount: string;
-  observation: string;
-};
-
-export type MonthlySummaryQuery = ClosingStatusQuery;
-
-export type MonthlySummary = {
-  totalPurchases: number;
-  totalSales: number;
-  igv: number;
-  rent: number;
-  totalToPay: number;
-  nextBalance: number;
+  saldoAnterior: string;
+  saldoSiguiente: string;
+  renta: string;
+  igvPago: string;
+  baseIgv: string;
+  nota: string;
 };
 
 export type MetrionApi = {
@@ -193,5 +198,4 @@ export type MetrionApi = {
   deleteSupplier: (id: number) => Promise<void>;
   getMonthlySale: (query: MonthlySaleQuery) => Promise<MonthlySale | null>;
   saveMonthlySale: (input: MonthlySaleInput) => Promise<MonthlySale>;
-  getMonthlySummary: (query: MonthlySummaryQuery) => Promise<MonthlySummary>;
 };
