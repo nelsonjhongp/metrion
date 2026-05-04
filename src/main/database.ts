@@ -7,8 +7,18 @@ import type {
   BusinessUnit,
   ClosingStatus,
   ClosingStatusQuery,
+  MonthlyPurchases,
   Profile,
+  Purchase,
+  PurchaseInput,
+  PurchaseQuery,
+  PurchaseUpdateInput,
 } from "../shared/types";
+import {
+  purchaseInputSchema,
+  purchaseQuerySchema,
+  purchaseUpdateInputSchema,
+} from "../shared/purchase-validation";
 
 const seedUnits = [
   "UNIT_A",
@@ -79,6 +89,167 @@ export function getClosingStatus(query: ClosingStatusQuery): ClosingStatus {
   return row?.is_closed ? "closed" : "open";
 }
 
+export function listPurchases(query: PurchaseQuery): MonthlyPurchases {
+  const safeQuery = purchaseQuerySchema.parse(query);
+  const db = getDatabase();
+  const rows = db
+    .prepare<[number, number, number, number], PurchaseRow>(
+      `SELECT id,
+              profile_id,
+              business_unit_id,
+              supplier_id,
+              period_month,
+              period_year,
+              purchase_date,
+              ruc,
+              supplier_name,
+              invoice_number,
+              amount,
+              payment,
+              note,
+              created_at,
+              updated_at
+       FROM purchases
+       WHERE profile_id = ?
+         AND business_unit_id = ?
+         AND period_month = ?
+         AND period_year = ?
+       ORDER BY purchase_date DESC, id DESC`,
+    )
+    .all(
+      safeQuery.profileId,
+      safeQuery.businessUnitId,
+      safeQuery.month,
+      safeQuery.year,
+    )
+    .map(mapPurchase);
+
+  const totalAmount = db
+    .prepare<
+      [number, number, number, number],
+      { total_amount: number | null }
+    >(
+      `SELECT COALESCE(SUM(amount), 0) AS total_amount
+       FROM purchases
+       WHERE profile_id = ?
+         AND business_unit_id = ?
+         AND period_month = ?
+         AND period_year = ?`,
+    )
+    .get(
+      safeQuery.profileId,
+      safeQuery.businessUnitId,
+      safeQuery.month,
+      safeQuery.year,
+    )?.total_amount ?? 0;
+
+  return { rows, totalAmount };
+}
+
+export function createPurchase(input: PurchaseInput): Purchase {
+  const safeInput = purchaseInputSchema.parse(input);
+  assertPeriodOpen(safeInput);
+
+  const result = getDatabase()
+    .prepare(
+      `INSERT INTO purchases (
+         profile_id,
+         business_unit_id,
+         supplier_id,
+         period_month,
+         period_year,
+         purchase_date,
+         ruc,
+         supplier_name,
+         invoice_number,
+         amount,
+         payment,
+         note
+       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      safeInput.profileId,
+      safeInput.businessUnitId,
+      safeInput.month,
+      safeInput.year,
+      safeInput.purchaseDate,
+      safeInput.ruc ?? null,
+      safeInput.supplierName,
+      safeInput.invoiceNumber ?? null,
+      safeInput.amount,
+      safeInput.payment ?? null,
+      safeInput.note ?? null,
+    );
+
+  return getPurchaseById(Number(result.lastInsertRowid));
+}
+
+export function updatePurchase(input: PurchaseUpdateInput): Purchase {
+  const safeInput = purchaseUpdateInputSchema.parse(input);
+  const currentPurchase = getPurchaseById(safeInput.id);
+  assertPeriodOpen({
+    profileId: currentPurchase.profileId,
+    businessUnitId: currentPurchase.businessUnitId,
+    month: currentPurchase.periodMonth,
+    year: currentPurchase.periodYear,
+  });
+  assertPeriodOpen(safeInput);
+
+  const result = getDatabase()
+    .prepare(
+      `UPDATE purchases
+       SET profile_id = ?,
+           business_unit_id = ?,
+           period_month = ?,
+           period_year = ?,
+           purchase_date = ?,
+           ruc = ?,
+           supplier_name = ?,
+           invoice_number = ?,
+           amount = ?,
+           payment = ?,
+           note = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+    )
+    .run(
+      safeInput.profileId,
+      safeInput.businessUnitId,
+      safeInput.month,
+      safeInput.year,
+      safeInput.purchaseDate,
+      safeInput.ruc ?? null,
+      safeInput.supplierName,
+      safeInput.invoiceNumber ?? null,
+      safeInput.amount,
+      safeInput.payment ?? null,
+      safeInput.note ?? null,
+      safeInput.id,
+    );
+
+  if (result.changes === 0) {
+    throw new Error("Compra no encontrada.");
+  }
+
+  return getPurchaseById(safeInput.id);
+}
+
+export function deletePurchase(id: number): void {
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("Compra invalida.");
+  }
+
+  const purchase = getPurchaseById(id);
+  assertPeriodOpen({
+    profileId: purchase.profileId,
+    businessUnitId: purchase.businessUnitId,
+    month: purchase.periodMonth,
+    year: purchase.periodYear,
+  });
+
+  getDatabase().prepare("DELETE FROM purchases WHERE id = ?").run(id);
+}
+
 export function getAppContext(): AppContext {
   const profiles = listProfiles();
   const selectedProfileId = profiles[0]?.id ?? null;
@@ -109,6 +280,42 @@ export function getAppContext(): AppContext {
     period,
     closingStatus,
   };
+}
+
+function assertPeriodOpen(query: PurchaseQuery): void {
+  if (getClosingStatus(query) === "closed") {
+    throw new Error("El mes esta cerrado.");
+  }
+}
+
+function getPurchaseById(id: number): Purchase {
+  const row = getDatabase()
+    .prepare<[number], PurchaseRow>(
+      `SELECT id,
+              profile_id,
+              business_unit_id,
+              supplier_id,
+              period_month,
+              period_year,
+              purchase_date,
+              ruc,
+              supplier_name,
+              invoice_number,
+              amount,
+              payment,
+              note,
+              created_at,
+              updated_at
+       FROM purchases
+       WHERE id = ?`,
+    )
+    .get(id);
+
+  if (!row) {
+    throw new Error("Compra no encontrada.");
+  }
+
+  return mapPurchase(row);
 }
 
 function migrate(db: Database.Database): void {
@@ -234,6 +441,24 @@ type BusinessUnitRow = {
   is_active: number;
 };
 
+type PurchaseRow = {
+  id: number;
+  profile_id: number;
+  business_unit_id: number;
+  supplier_id: number | null;
+  period_month: number;
+  period_year: number;
+  purchase_date: string;
+  ruc: string | null;
+  supplier_name: string;
+  invoice_number: string | null;
+  amount: number;
+  payment: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function mapBusinessUnit(row: BusinessUnitRow): BusinessUnit {
   return {
     id: row.id,
@@ -243,5 +468,24 @@ function mapBusinessUnit(row: BusinessUnitRow): BusinessUnit {
   };
 }
 
-app.on("before-quit", closeDatabase);
+function mapPurchase(row: PurchaseRow): Purchase {
+  return {
+    id: row.id,
+    profileId: row.profile_id,
+    businessUnitId: row.business_unit_id,
+    supplierId: row.supplier_id,
+    periodMonth: row.period_month,
+    periodYear: row.period_year,
+    purchaseDate: row.purchase_date,
+    ruc: row.ruc,
+    supplierName: row.supplier_name,
+    invoiceNumber: row.invoice_number,
+    amount: row.amount,
+    payment: row.payment,
+    note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
+app.on("before-quit", closeDatabase);
