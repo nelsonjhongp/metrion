@@ -66,7 +66,7 @@ export function PurchasesPage() {
     setDialogOpen(true);
   }
 
-  async function savePurchase(values: PurchaseFormValues) {
+  async function savePurchase(values: PurchaseFormValues, supplierId?: number | null) {
     if (!profileId || !businessUnitId) {
       throw new Error("Selecciona perfil y unidad.");
     }
@@ -76,6 +76,7 @@ export function PurchasesPage() {
       businessUnitId,
       month,
       year,
+      supplierId: supplierId ?? null,
       purchaseDate: values.purchaseDate,
       ruc: emptyToNull(values.ruc),
       supplierName: values.supplierName.trim(),
