@@ -116,6 +116,30 @@ export type SupplierFormValues = {
   note: string;
 };
 
+export type MonthlySaleQuery = ClosingStatusQuery;
+
+export type MonthlySale = {
+  id: number;
+  profileId: number;
+  businessUnitId: number;
+  periodMonth: number;
+  periodYear: number;
+  totalAmount: number;
+  observation: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MonthlySaleInput = MonthlySaleQuery & {
+  totalAmount: number;
+  observation?: string | null;
+};
+
+export type MonthlySaleFormValues = {
+  totalAmount: string;
+  observation: string;
+};
+
 export type MetrionApi = {
   getContext: () => Promise<AppContext>;
   listProfiles: () => Promise<Profile[]>;
@@ -130,4 +154,6 @@ export type MetrionApi = {
   createSupplier: (input: SupplierInput) => Promise<Supplier>;
   updateSupplier: (input: SupplierUpdateInput) => Promise<Supplier>;
   deleteSupplier: (id: number) => Promise<void>;
+  getMonthlySale: (query: MonthlySaleQuery) => Promise<MonthlySale | null>;
+  saveMonthlySale: (input: MonthlySaleInput) => Promise<MonthlySale>;
 };

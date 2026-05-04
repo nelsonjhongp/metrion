@@ -7,6 +7,9 @@ import type {
   BusinessUnit,
   ClosingStatus,
   ClosingStatusQuery,
+  MonthlySale,
+  MonthlySaleInput,
+  MonthlySaleQuery,
   MonthlyPurchases,
   Profile,
   Purchase,
@@ -19,6 +22,10 @@ import type {
   SupplierQuery,
   SupplierUpdateInput,
 } from "../shared/types";
+import {
+  monthlySaleInputSchema,
+  monthlySaleQuerySchema,
+} from "../shared/sales-validation";
 import {
   purchaseInputSchema,
   purchaseQuerySchema,
@@ -354,6 +361,73 @@ export function deleteSupplier(id: number): void {
   }
 }
 
+export function getMonthlySale(query: MonthlySaleQuery): MonthlySale | null {
+  const safeQuery = monthlySaleQuerySchema.parse(query);
+  const row = getDatabase()
+    .prepare<[number, number, number, number], MonthlySaleRow>(
+      `SELECT id,
+              profile_id,
+              business_unit_id,
+              period_month,
+              period_year,
+              total_amount,
+              observation,
+              created_at,
+              updated_at
+       FROM monthly_sales
+       WHERE profile_id = ?
+         AND business_unit_id = ?
+         AND period_month = ?
+         AND period_year = ?`,
+    )
+    .get(
+      safeQuery.profileId,
+      safeQuery.businessUnitId,
+      safeQuery.month,
+      safeQuery.year,
+    );
+
+  return row ? mapMonthlySale(row) : null;
+}
+
+export function saveMonthlySale(input: MonthlySaleInput): MonthlySale {
+  const safeInput = monthlySaleInputSchema.parse(input);
+  assertPeriodOpen(safeInput);
+
+  getDatabase()
+    .prepare(
+      `INSERT INTO monthly_sales (
+         profile_id,
+         business_unit_id,
+         period_month,
+         period_year,
+         total_amount,
+         observation
+       ) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(profile_id, business_unit_id, period_month, period_year)
+       DO UPDATE SET
+         total_amount = excluded.total_amount,
+         observation = excluded.observation,
+         updated_at = CURRENT_TIMESTAMP`,
+    )
+    .run(
+      safeInput.profileId,
+      safeInput.businessUnitId,
+      safeInput.month,
+      safeInput.year,
+      safeInput.totalAmount,
+      safeInput.observation ?? null,
+    );
+
+  const saved = getMonthlySale(safeInput);
+
+  if (!saved) {
+    throw new Error("No se pudo guardar la venta.");
+  }
+
+  return saved;
+}
+
 export function getAppContext(): AppContext {
   const profiles = listProfiles();
   const selectedProfileId = profiles[0]?.id ?? null;
@@ -601,6 +675,18 @@ type SupplierRow = {
   updated_at: string;
 };
 
+type MonthlySaleRow = {
+  id: number;
+  profile_id: number;
+  business_unit_id: number;
+  period_month: number;
+  period_year: number;
+  total_amount: number;
+  observation: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function mapBusinessUnit(row: BusinessUnitRow): BusinessUnit {
   return {
     id: row.id,
@@ -637,6 +723,20 @@ function mapSupplier(row: SupplierRow): Supplier {
     ruc: row.ruc,
     name: row.name,
     note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapMonthlySale(row: MonthlySaleRow): MonthlySale {
+  return {
+    id: row.id,
+    profileId: row.profile_id,
+    businessUnitId: row.business_unit_id,
+    periodMonth: row.period_month,
+    periodYear: row.period_year,
+    totalAmount: row.total_amount,
+    observation: row.observation,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

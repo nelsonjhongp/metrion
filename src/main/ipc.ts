@@ -1,6 +1,8 @@
 import { ipcMain } from "electron";
 import type {
   ClosingStatusQuery,
+  MonthlySaleInput,
+  MonthlySaleQuery,
   PurchaseInput,
   PurchaseQuery,
   PurchaseUpdateInput,
@@ -17,10 +19,12 @@ import {
   findSupplierByRuc,
   getAppContext,
   getClosingStatus,
+  getMonthlySale,
   listBusinessUnits,
   listProfiles,
   listPurchases,
   listSuppliers,
+  saveMonthlySale,
   updateSupplier,
   updatePurchase,
 } from "./database";
@@ -61,4 +65,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("suppliers:delete", (_event, id: number) => {
     deleteSupplier(id);
   });
+  ipcMain.handle("sales:getMonthly", (_event, query: MonthlySaleQuery) =>
+    getMonthlySale(query),
+  );
+  ipcMain.handle("sales:saveMonthly", (_event, input: MonthlySaleInput) =>
+    saveMonthlySale(input),
+  );
 }

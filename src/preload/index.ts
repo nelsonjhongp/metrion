@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   ClosingStatusQuery,
   MetrionApi,
+  MonthlySaleInput,
+  MonthlySaleQuery,
   PurchaseInput,
   PurchaseQuery,
   PurchaseUpdateInput,
@@ -34,6 +36,10 @@ const api: MetrionApi = {
   updateSupplier: (input: SupplierUpdateInput) =>
     ipcRenderer.invoke("suppliers:update", input),
   deleteSupplier: (id: number) => ipcRenderer.invoke("suppliers:delete", id),
+  getMonthlySale: (query: MonthlySaleQuery) =>
+    ipcRenderer.invoke("sales:getMonthly", query),
+  saveMonthlySale: (input: MonthlySaleInput) =>
+    ipcRenderer.invoke("sales:saveMonthly", input),
 };
 
 contextBridge.exposeInMainWorld("metrion", api);
