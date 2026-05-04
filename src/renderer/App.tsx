@@ -2,14 +2,17 @@ import { useEffect, useState } from "react";
 import { AppLayout, type AppPage } from "./components/AppLayout";
 import { EmptyState } from "./components/EmptyState";
 import { ClosingPage } from "./pages/ClosingPage";
+import { HistoryPage } from "./pages/HistoryPage";
+import { MonthlyControlPage } from "./pages/MonthlyControlPage";
 import { PurchasesPage } from "./pages/PurchasesPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { SalesPage } from "./pages/SalesPage";
 import { SummaryPage } from "./pages/SummaryPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
 import { useAppStore } from "./stores/app-store";
 
 export function App() {
-  const [activePage, setActivePage] = useState<AppPage>("purchases");
+  const [activePage, setActivePage] = useState<AppPage>("control");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const setContext = useAppStore((state) => state.setContext);
@@ -48,11 +51,14 @@ export function App() {
 
   return (
     <AppLayout activePage={activePage} onNavigate={setActivePage}>
+      {activePage === "control" && <MonthlyControlPage />}
       {activePage === "purchases" && <PurchasesPage />}
+      {activePage === "suppliers" && <SuppliersPage />}
+      {activePage === "history" && <HistoryPage />}
+      {activePage === "reports" && <ReportsPage />}
       {activePage === "sales" && <SalesPage />}
       {activePage === "summary" && <SummaryPage />}
       {activePage === "closing" && <ClosingPage />}
-      {activePage === "suppliers" && <SuppliersPage />}
     </AppLayout>
   );
 }
