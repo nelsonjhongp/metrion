@@ -15,6 +15,12 @@ export function App() {
   const setContext = useAppStore((state) => state.setContext);
 
   useEffect(() => {
+    if (!window.metrion) {
+      setError("No se pudo cargar el puente local de Electron.");
+      setIsLoading(false);
+      return;
+    }
+
     void window.metrion
       .getContext()
       .then(setContext)
@@ -50,4 +56,3 @@ export function App() {
     </AppLayout>
   );
 }
-

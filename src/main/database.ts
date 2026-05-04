@@ -13,12 +13,23 @@ import type {
   PurchaseInput,
   PurchaseQuery,
   PurchaseUpdateInput,
+  Supplier,
+  SupplierInput,
+  SupplierLookupQuery,
+  SupplierQuery,
+  SupplierUpdateInput,
 } from "../shared/types";
 import {
   purchaseInputSchema,
   purchaseQuerySchema,
   purchaseUpdateInputSchema,
 } from "../shared/purchase-validation";
+import {
+  supplierInputSchema,
+  supplierLookupQuerySchema,
+  supplierQuerySchema,
+  supplierUpdateInputSchema,
+} from "../shared/supplier-validation";
 
 const seedUnits = [
   "UNIT_A",
@@ -250,6 +261,99 @@ export function deletePurchase(id: number): void {
   getDatabase().prepare("DELETE FROM purchases WHERE id = ?").run(id);
 }
 
+export function listSuppliers(query: SupplierQuery): Supplier[] {
+  const safeQuery = supplierQuerySchema.parse(query);
+
+  return getDatabase()
+    .prepare<[number], SupplierRow>(
+      `SELECT id, profile_id, ruc, name, note, created_at, updated_at
+       FROM suppliers
+       WHERE profile_id = ?
+       ORDER BY name ASC, ruc ASC`,
+    )
+    .all(safeQuery.profileId)
+    .map(mapSupplier);
+}
+
+export function findSupplierByRuc(query: SupplierLookupQuery): Supplier | null {
+  const safeQuery = supplierLookupQuerySchema.parse(query);
+  const row = getDatabase()
+    .prepare<[number, string], SupplierRow>(
+      `SELECT id, profile_id, ruc, name, note, created_at, updated_at
+       FROM suppliers
+       WHERE profile_id = ? AND ruc = ?`,
+    )
+    .get(safeQuery.profileId, safeQuery.ruc);
+
+  return row ? mapSupplier(row) : null;
+}
+
+export function createSupplier(input: SupplierInput): Supplier {
+  const safeInput = supplierInputSchema.parse(input);
+
+  try {
+    const result = getDatabase()
+      .prepare(
+        `INSERT INTO suppliers (profile_id, ruc, name, note)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(
+        safeInput.profileId,
+        safeInput.ruc,
+        safeInput.name,
+        safeInput.note ?? null,
+      );
+
+    return getSupplierById(Number(result.lastInsertRowid));
+  } catch (error) {
+    throw normalizeSqliteError(error);
+  }
+}
+
+export function updateSupplier(input: SupplierUpdateInput): Supplier {
+  const safeInput = supplierUpdateInputSchema.parse(input);
+
+  try {
+    const result = getDatabase()
+      .prepare(
+        `UPDATE suppliers
+         SET profile_id = ?,
+             ruc = ?,
+             name = ?,
+             note = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      )
+      .run(
+        safeInput.profileId,
+        safeInput.ruc,
+        safeInput.name,
+        safeInput.note ?? null,
+        safeInput.id,
+      );
+
+    if (result.changes === 0) {
+      throw new Error("Proveedor no encontrado.");
+    }
+
+    return getSupplierById(safeInput.id);
+  } catch (error) {
+    throw normalizeSqliteError(error);
+  }
+}
+
+export function deleteSupplier(id: number): void {
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("Proveedor invalido.");
+  }
+
+  const result = getDatabase().prepare("DELETE FROM suppliers WHERE id = ?").run(id);
+
+  if (result.changes === 0) {
+    throw new Error("Proveedor no encontrado.");
+  }
+}
+
 export function getAppContext(): AppContext {
   const profiles = listProfiles();
   const selectedProfileId = profiles[0]?.id ?? null;
@@ -316,6 +420,34 @@ function getPurchaseById(id: number): Purchase {
   }
 
   return mapPurchase(row);
+}
+
+function getSupplierById(id: number): Supplier {
+  const row = getDatabase()
+    .prepare<[number], SupplierRow>(
+      `SELECT id, profile_id, ruc, name, note, created_at, updated_at
+       FROM suppliers
+       WHERE id = ?`,
+    )
+    .get(id);
+
+  if (!row) {
+    throw new Error("Proveedor no encontrado.");
+  }
+
+  return mapSupplier(row);
+}
+
+function normalizeSqliteError(error: unknown): Error {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "SQLITE_CONSTRAINT_UNIQUE"
+  ) {
+    return new Error("Ya existe un proveedor con ese RUC.");
+  }
+
+  return error instanceof Error ? error : new Error("Operacion invalida.");
 }
 
 function migrate(db: Database.Database): void {
@@ -459,6 +591,16 @@ type PurchaseRow = {
   updated_at: string;
 };
 
+type SupplierRow = {
+  id: number;
+  profile_id: number;
+  ruc: string;
+  name: string;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function mapBusinessUnit(row: BusinessUnitRow): BusinessUnit {
   return {
     id: row.id,
@@ -482,6 +624,18 @@ function mapPurchase(row: PurchaseRow): Purchase {
     invoiceNumber: row.invoice_number,
     amount: row.amount,
     payment: row.payment,
+    note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSupplier(row: SupplierRow): Supplier {
+  return {
+    id: row.id,
+    profileId: row.profile_id,
+    ruc: row.ruc,
+    name: row.name,
     note: row.note,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

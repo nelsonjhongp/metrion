@@ -5,6 +5,10 @@ import type {
   PurchaseInput,
   PurchaseQuery,
   PurchaseUpdateInput,
+  SupplierInput,
+  SupplierLookupQuery,
+  SupplierQuery,
+  SupplierUpdateInput,
 } from "../shared/types";
 
 const api: MetrionApi = {
@@ -21,6 +25,15 @@ const api: MetrionApi = {
   updatePurchase: (input: PurchaseUpdateInput) =>
     ipcRenderer.invoke("purchases:update", input),
   deletePurchase: (id: number) => ipcRenderer.invoke("purchases:delete", id),
+  listSuppliers: (query: SupplierQuery) =>
+    ipcRenderer.invoke("suppliers:list", query),
+  findSupplierByRuc: (query: SupplierLookupQuery) =>
+    ipcRenderer.invoke("suppliers:findByRuc", query),
+  createSupplier: (input: SupplierInput) =>
+    ipcRenderer.invoke("suppliers:create", input),
+  updateSupplier: (input: SupplierUpdateInput) =>
+    ipcRenderer.invoke("suppliers:update", input),
+  deleteSupplier: (id: number) => ipcRenderer.invoke("suppliers:delete", id),
 };
 
 contextBridge.exposeInMainWorld("metrion", api);

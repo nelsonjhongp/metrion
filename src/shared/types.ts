@@ -82,6 +82,40 @@ export type MonthlyPurchases = {
   totalAmount: number;
 };
 
+export type SupplierQuery = {
+  profileId: number;
+};
+
+export type SupplierLookupQuery = SupplierQuery & {
+  ruc: string;
+};
+
+export type Supplier = {
+  id: number;
+  profileId: number;
+  ruc: string;
+  name: string;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SupplierInput = SupplierQuery & {
+  ruc: string;
+  name: string;
+  note?: string | null;
+};
+
+export type SupplierUpdateInput = SupplierInput & {
+  id: number;
+};
+
+export type SupplierFormValues = {
+  ruc: string;
+  name: string;
+  note: string;
+};
+
 export type MetrionApi = {
   getContext: () => Promise<AppContext>;
   listProfiles: () => Promise<Profile[]>;
@@ -91,4 +125,9 @@ export type MetrionApi = {
   createPurchase: (input: PurchaseInput) => Promise<Purchase>;
   updatePurchase: (input: PurchaseUpdateInput) => Promise<Purchase>;
   deletePurchase: (id: number) => Promise<void>;
+  listSuppliers: (query: SupplierQuery) => Promise<Supplier[]>;
+  findSupplierByRuc: (query: SupplierLookupQuery) => Promise<Supplier | null>;
+  createSupplier: (input: SupplierInput) => Promise<Supplier>;
+  updateSupplier: (input: SupplierUpdateInput) => Promise<Supplier>;
+  deleteSupplier: (id: number) => Promise<void>;
 };

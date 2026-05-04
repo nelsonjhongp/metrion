@@ -9,6 +9,7 @@ import { Button } from "./ui/button";
 type PurchaseDialogProps = {
   defaultDate: string;
   open: boolean;
+  profileId: number | null;
   purchase?: Purchase | null;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: PurchaseFormValues) => Promise<void>;
@@ -37,12 +38,14 @@ const purchaseValues = (purchase: Purchase): PurchaseFormValues => ({
 export function PurchaseDialog({
   defaultDate,
   open,
+  profileId,
   purchase,
   onOpenChange,
   onSubmit,
 }: PurchaseDialogProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [lastLookupRuc, setLastLookupRuc] = useState<string | null>(null);
   const initialValues = useMemo(
     () => (purchase ? purchaseValues(purchase) : emptyValues(defaultDate)),
     [defaultDate, purchase],
@@ -53,16 +56,55 @@ export function PurchaseDialog({
     register,
     reset,
     setError,
+    setValue,
   } = useForm<PurchaseFormValues>({
     defaultValues: initialValues,
+  });
+  const rucField = register("ruc", {
+    onBlur: (event) => {
+      void lookupSupplier(event.target.value);
+    },
+    onChange: (event) => {
+      const value = event.target.value;
+      if (/^\d{11}$/.test(value)) {
+        void lookupSupplier(value);
+      }
+    },
   });
 
   useEffect(() => {
     if (open) {
       reset(initialValues);
       setFormError(null);
+      setLastLookupRuc(null);
     }
   }, [initialValues, open, reset]);
+
+  async function lookupSupplier(rawRuc: string) {
+    const ruc = rawRuc.trim();
+
+    if (!profileId || ruc.length === 0 || ruc === lastLookupRuc) {
+      return;
+    }
+
+    setLastLookupRuc(ruc);
+
+    try {
+      const supplier = await window.metrion.findSupplierByRuc({
+        profileId,
+        ruc,
+      });
+
+      if (supplier) {
+        setValue("supplierName", supplier.name, {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+      }
+    } catch {
+      // Autocomplete should never block manual purchase entry.
+    }
+  }
 
   async function submit(values: PurchaseFormValues) {
     const parsed = purchaseFormSchema.safeParse(values);
@@ -112,7 +154,7 @@ export function PurchaseDialog({
                 />
               </Field>
               <Field label="RUC" error={errors.ruc?.message}>
-                <input className="field" maxLength={11} {...register("ruc")} />
+                <input className="field" maxLength={11} {...rucField} />
               </Field>
             </div>
             <Field label="Proveedor" error={errors.supplierName?.message}>

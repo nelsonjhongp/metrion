@@ -210,6 +210,7 @@ export function PurchasesPage() {
         onOpenChange={setDialogOpen}
         onSubmit={savePurchase}
         open={dialogOpen}
+        profileId={profileId}
         purchase={editingPurchase}
       />
     </section>

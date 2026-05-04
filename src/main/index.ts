@@ -15,11 +15,13 @@ function createWindow(): void {
     backgroundColor: "#f6f1e8",
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.js"),
+      preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  mainWindow.setMenuBarVisibility(false);
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
@@ -49,4 +51,3 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
-
