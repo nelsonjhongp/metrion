@@ -18,6 +18,7 @@ export const purchaseInputSchema = purchaseQuerySchema.extend({
   purchaseDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha requerida"),
+  supplierId: z.number().int().positive().nullable().optional(),
   ruc: z
     .string()
     .trim()

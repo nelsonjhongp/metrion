@@ -76,6 +76,7 @@ export type Purchase = {
 
 export type PurchaseInput = PurchaseQuery & {
   purchaseDate: string;
+  supplierId?: number | null;
   ruc?: string | null;
   supplierName: string;
   invoiceNumber?: string | null;

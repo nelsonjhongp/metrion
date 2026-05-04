@@ -291,11 +291,12 @@ export function createPurchase(input: PurchaseInput): Purchase {
          amount,
          payment,
          note
-       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       safeInput.profileId,
       safeInput.businessUnitId,
+      safeInput.supplierId ?? null,
       safeInput.month,
       safeInput.year,
       safeInput.purchaseDate,
@@ -326,6 +327,7 @@ export function updatePurchase(input: PurchaseUpdateInput): Purchase {
       `UPDATE purchases
        SET profile_id = ?,
            business_unit_id = ?,
+           supplier_id = ?,
            period_month = ?,
            period_year = ?,
            purchase_date = ?,
@@ -341,6 +343,7 @@ export function updatePurchase(input: PurchaseUpdateInput): Purchase {
     .run(
       safeInput.profileId,
       safeInput.businessUnitId,
+      safeInput.supplierId ?? null,
       safeInput.month,
       safeInput.year,
       safeInput.purchaseDate,
@@ -796,6 +799,77 @@ function migrate(db: Database.Database): void {
   }
 
   db.pragma("foreign_keys = ON");
+
+  deduplicateSuppliers(db);
+}
+
+function normalizeSupplierKey(name: string): string {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[-_]+$/, "")
+    .replace(/\s+/g, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (normalized === "bcp") return name.trim();
+  return normalized;
+}
+
+function deduplicateSuppliers(db: Database.Database): void {
+  type SupplierRow = { id: number; profile_id: number; ruc: string; name: string };
+
+  const all = db
+    .prepare<[], SupplierRow>(
+      `SELECT id, profile_id, ruc, name FROM suppliers
+       ORDER BY
+         CASE WHEN ruc GLOB '[0-9]*' AND length(ruc) >= 8 THEN 0 ELSE 1 END,
+         id ASC`,
+    )
+    .all();
+
+  const groups = new Map<string, SupplierRow[]>();
+
+  for (const row of all) {
+    const key = `${row.profile_id}:${normalizeSupplierKey(row.name)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(row);
+  }
+
+  const updatePurchases = db.prepare(
+    "UPDATE purchases SET supplier_id = ? WHERE supplier_id = ?",
+  );
+  const deleteSupplier = db.prepare("DELETE FROM suppliers WHERE id = ?");
+
+  let merged = 0;
+
+  db.transaction(() => {
+    for (const [, group] of groups) {
+      if (group.length <= 1) continue;
+
+      const canonical = group[0]!;
+      const removed = group.slice(1);
+
+      for (const dup of removed) {
+        const info = updatePurchases.run(canonical.id, dup.id);
+        if (info.changes > 0) merged += info.changes;
+        deleteSupplier.run(dup.id);
+      }
+    }
+  })();
+
+  if (merged > 0) {
+    // Also fill missing supplier_id on purchases where supplier_name matches
+    db.exec(`
+      UPDATE purchases SET supplier_id = (
+        SELECT s.id FROM suppliers s
+        WHERE s.profile_id = purchases.profile_id
+          AND LOWER(TRIM(REPLACE(REPLACE(s.name, '-', ''), '_', ''))) =
+              LOWER(TRIM(REPLACE(REPLACE(purchases.supplier_name, '-', ''), '_', '')))
+        LIMIT 1
+      )
+      WHERE supplier_id IS NULL
+    `);
+  }
 }
 
 function seed(db: Database.Database): void {
