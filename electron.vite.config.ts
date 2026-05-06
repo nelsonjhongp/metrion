@@ -30,6 +30,11 @@ export default defineConfig({
   renderer: {
     root: ".",
     plugins: [react()],
+    resolve: {
+      alias: {
+        "@": resolve(__dirname, "src/renderer"),
+      },
+    },
     build: {
       rollupOptions: {
         input: {

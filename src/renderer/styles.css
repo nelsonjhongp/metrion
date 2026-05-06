@@ -6,21 +6,52 @@
   --background: 0 0% 96%;
   --foreground: 215 28% 17%;
   --surface: 0 0% 98%;
+  --card: 0 0% 100%;
+  --card-foreground: 215 28% 17%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 215 28% 17%;
   --muted: 0 0% 92%;
   --muted-foreground: 215 14% 40%;
   --border: 0 0% 88%;
+  --input: 0 0% 88%;
+  --ring: 162 62% 28%;
   --primary: 162 62% 28%;
   --primary-foreground: 0 0% 100%;
+  --accent: 160 33% 94%;
+  --accent-foreground: 215 28% 17%;
+  --success: 145 47% 92%;
+  --success-foreground: 146 63% 28%;
+  --warning: 42 89% 92%;
+  --warning-foreground: 32 92% 32%;
+  --danger: 8 72% 94%;
+  --danger-foreground: 4 74% 40%;
+  --info: 214 82% 94%;
+  --info-foreground: 216 73% 42%;
+  --sidebar: 221 62% 7%;
+  --sidebar-foreground: 210 20% 94%;
+  --sidebar-active: 0 0% 100%;
+  --sidebar-active-foreground: 222 47% 11%;
+  --sidebar-border: 221 43% 15%;
+  --chart-1: oklch(0.62 0.14 186);
+  --chart-2: oklch(0.67 0.17 58);
+  --chart-3: oklch(0.72 0.12 150);
+  --chart-4: oklch(0.74 0.11 250);
+  --chart-5: oklch(0.7 0.16 22);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  min-width: 980px;
-  min-height: 640px;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: Aptos, "Segoe UI", sans-serif;
@@ -35,6 +66,10 @@ textarea {
 
 @layer components {
   .field {
-    @apply h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none transition-colors focus:border-primary disabled:cursor-not-allowed disabled:bg-muted;
+    @apply h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-sm transition-[border-color,box-shadow] focus-visible:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:bg-muted;
+  }
+
+  .select-field {
+    @apply rounded-md border border-input bg-card text-foreground shadow-sm transition-[border-color,box-shadow] focus-visible:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:bg-muted;
   }
 }
