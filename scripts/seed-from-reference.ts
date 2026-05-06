@@ -7,11 +7,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const DATA_DIR = path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "metrion.sqlite");
-const REF_DIR = path.join(ROOT, "docs", "metrion_reference");
+const REF_DIR = process.env.METRION_REFERENCE_DIR
+  ? path.resolve(ROOT, process.env.METRION_REFERENCE_DIR)
+  : path.join(ROOT, "docs", "reference-data");
 const PURCHASES_CSV = path.join(REF_DIR, "purchases_normalized.csv");
 const MONTHLY_CSV = path.join(REF_DIR, "monthly_reference.csv");
 
-const PROFILE_NAME = "ORG_IMPORT";
+const PROFILE_NAME = process.env.METRION_IMPORT_PROFILE_NAME?.trim() || "ORG_IMPORT";
 
 function parseCsv(content: string): { headers: string[]; rows: Record<string, string>[] } {
   const lines = content.trim().split(/\r?\n/);
@@ -87,6 +89,12 @@ interface SupplierKey {
 
 function main() {
   mkdirSync(DATA_DIR, { recursive: true });
+
+  if (!existsSync(PURCHASES_CSV) || !existsSync(MONTHLY_CSV)) {
+    throw new Error(
+      `No se encontraron los archivos de referencia. Usa METRION_REFERENCE_DIR o coloca los CSV en ${REF_DIR}.`,
+    );
+  }
 
   const db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
@@ -200,8 +208,14 @@ function main() {
   )!.id;
   console.log(`Profile "${PROFILE_NAME}" id=${profileId}`);
 
-  // 2. Ensure business units exist
-  const unitNames = ["UNIT_A", "UNIT_B", "UNIT_C"];
+  // 2. Ensure business units exist using the input data instead of hardcoded names
+  const unitNames = Array.from(
+    new Set(
+      [...purchasesData.rows, ...monthlyData.rows]
+        .map((row) => row["unit"]?.trim() ?? "")
+        .filter((name) => name.length > 0),
+    ),
+  ).sort((left, right) => left.localeCompare(right, "es"));
   const unitIds = new Map<string, number>();
 
   const insertUnit = db.prepare(
@@ -219,7 +233,7 @@ function main() {
     console.log(`Unit "${name}" id=${id}`);
   }
 
-  // 3. Create suppliers from purchases_normalized.csv
+  // 3. Create suppliers from the purchase reference file
   function normalizeSupplierKey(name: string): string {
     const normalized = name
       .trim()
@@ -353,7 +367,7 @@ function main() {
   insertAll();
   console.log(`Purchases: ${purchasesInserted} inserted, ${purchasesSkipped} skipped (duplicates/invalid)`);
 
-  // 5. Upsert monthly_sales from monthly_reference.csv
+  // 5. Upsert monthly_sales from the monthly reference file
   const upsertMonthly = db.prepare(
     `INSERT INTO monthly_sales (
        profile_id, business_unit_id,

@@ -7,7 +7,7 @@ const ROOT = process.cwd();
 const INPUT_FILE = path.join(ROOT, "docs", "hojacalculo.xlsx");
 const OUTPUT_DIR = path.join(ROOT, "data", "import");
 const SQLITE_FILE = path.join(ROOT, "data", "metrion.sqlite");
-const PROFILE_NAME = "ORG_IMPORT";
+const PROFILE_NAME = process.env.METRION_IMPORT_PROFILE_NAME?.trim() || "ORG_IMPORT";
 const APPLY_SQLITE = process.argv.includes("--apply-sqlite");
 
 const MONTHS = new Map([
@@ -64,12 +64,6 @@ function normalizeText(value) {
 }
 
 function normalizeUnitName(sheetName) {
-  const normalized = normalizeText(sheetName);
-  if (normalized.includes("UNIT_A")) {
-    return "UNIT_A";
-  }
-  if (normalized.includes("UNIT_B")) return "UNIT_B";
-  if (normalized.includes("UNIT_C")) return "UNIT_C";
   return cleanText(sheetName).toUpperCase();
 }
 

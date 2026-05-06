@@ -2,16 +2,20 @@
   "name": "metrion",
   "version": "0.1.0",
   "description": "Aplicacion local para controlar compras, ventas, impuestos y cierre mensual.",
+  "author": "Metrion",
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
+    "clean:local-state": "node scripts/clean-local-state.mjs",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "import:excel": "node scripts/import-excel.mjs",
     "seed:reference": "tsx scripts/seed-from-reference.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-builder install-app-deps",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -29,8 +33,26 @@
     "zod": "^4.1.12",
     "zustand": "^5.0.8"
   },
+  "build": {
+    "appId": "com.metrion.app",
+    "productName": "Metrion",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "src/renderer/assets/metrion-logo-icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
@@ -38,6 +60,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.22",
     "electron": "^39.2.4",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^4.0.1",
     "exceljs": "^4.4.0",
     "postcss": "^8.5.6",

@@ -1,9 +1,10 @@
 import Database from "better-sqlite3";
 import { app } from "electron";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
 import { randomUUID } from "node:crypto";
+import { getAppDataDir, getDatabasePath } from "./app-paths";
 import type {
   AppContext,
   BackupImportProfileImpact,
@@ -69,12 +70,6 @@ import {
 } from "../shared/supplier-validation";
 import { calculateMonthlySummary } from "../shared/monthly-calculations";
 
-const seedUnits = [
-  "UNIT_A",
-  "UNIT_B",
-  "UNIT_C",
-];
-
 const MONTH_LABELS_SHORT = [
   "",
   "Ene",
@@ -98,16 +93,14 @@ export function getDatabase(): Database.Database {
     return database;
   }
 
-  const dataDir = path.join(process.cwd(), "data");
+  const dataDir = getAppDataDir();
   mkdirSync(dataDir, { recursive: true });
 
-  database = new Database(path.join(dataDir, "metrion.sqlite"));
+  database = new Database(getDatabasePath());
   database.pragma("journal_mode = WAL");
   database.pragma("foreign_keys = ON");
 
   migrate(database);
-  seed(database);
-  recoverData(database);
 
   return database;
 }
@@ -1477,10 +1470,8 @@ export async function parseImportPreview(query: ImportPreviewQuery & { filePath:
 
   for (const sheet of wb.worksheets) {
     const sn = cleanImportText(sheet.name).toUpperCase();
-    if (sn.includes("UNIT_A")) unitName = "UNIT_A";
-    else if (sn.includes("UNIT_B")) unitName = "UNIT_B";
-    else if (sn.includes("UNIT_C")) unitName = "UNIT_C";
-    else unitName = cleanImportText(sheet.name);
+    if (sn.length > 0) unitName = cleanImportText(sheet.name);
+    else unitName = "Unidad";
 
     // Find month blocks (scan first 8 rows)
     interface Block { month: number; year: number; labelRow: number; startCol: number; endCol: number; }
@@ -3602,195 +3593,6 @@ function collectSupplierSimilarityGroups(
       canonicalName: variants[0] ?? "",
       variants,
     }));
-}
-
-function seed(db: Database.Database): void {
-  const insertProfile = db.prepare("INSERT OR IGNORE INTO profiles (name) VALUES (?)");
-  const profile = db
-    .prepare<[], { id: number }>("SELECT id FROM profiles WHERE name = 'ORG_IMPORT'")
-    .get();
-
-  insertProfile.run("ORG_IMPORT");
-
-  const profileId =
-    profile?.id ??
-    db
-      .prepare<[], { id: number }>("SELECT id FROM profiles WHERE name = 'ORG_IMPORT'")
-      .get()?.id;
-
-  if (!profileId) {
-    throw new Error("No se pudo crear el perfil inicial ORG_IMPORT.");
-  }
-
-  const insertUnit = db.prepare(
-    "INSERT OR IGNORE INTO business_units (profile_id, name) VALUES (?, ?)",
-  );
-
-  for (const unit of seedUnits) {
-    insertUnit.run(profileId, unit);
-  }
-
-  // Ensure all profiles have their seed units
-  const allProfiles = db.prepare<[], { id: number }>("SELECT id FROM profiles").all();
-  const reactivateUnit = db.prepare(
-    "UPDATE business_units SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE profile_id = ? AND name = ? AND is_active = 0",
-  );
-  for (const p of allProfiles) {
-    for (const unit of seedUnits) {
-      insertUnit.run(p.id, unit);
-      reactivateUnit.run(p.id, unit);
-    }
-  }
-}
-
-function recoverData(db: Database.Database): void {
-  const refDir = path.join(process.cwd(), "docs", "metrion_reference");
-  const purchasesCsv = path.join(refDir, "purchases_normalized.csv");
-  const monthlyCsv = path.join(refDir, "monthly_reference.csv");
-
-  if (!existsSync(purchasesCsv) || !existsSync(monthlyCsv)) return;
-
-  // Skip if already seeded
-  const existingCount = db.prepare<[], { count: number }>("SELECT COUNT(*) AS count FROM purchases").get()?.count ?? 0;
-  if (existingCount > 0) return;
-
-  try {
-    const parseCsv = (content: string) => {
-      const lines = content.trim().split(/\r?\n/);
-      if (lines.length < 2) return { headers: [] as string[], rows: [] as Record<string, string>[] };
-      const headers = lines[0].split(",").map((h) => h.trim());
-      const rows: Record<string, string>[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        const vals = lines[i].split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
-        const row: Record<string, string> = {};
-        for (let j = 0; j < headers.length; j++) row[headers[j]] = vals[j] ?? "";
-        rows.push(row);
-      }
-      return { headers, rows };
-    };
-
-    const purchasesRows = parseCsv(readFileSync(purchasesCsv, "utf8")).rows;
-    const monthlyRows = parseCsv(readFileSync(monthlyCsv, "utf8")).rows;
-
-    // Ensure profile
-    const profileId = db.prepare<[], { id: number }>("SELECT id FROM profiles LIMIT 1").get()?.id;
-    if (!profileId) return;
-
-    // Ensure units
-    const insertUnit = db.prepare("INSERT OR IGNORE INTO business_units (profile_id, name) VALUES (?, ?)");
-    const reactivateUnit = db.prepare(
-      "UPDATE business_units SET is_active = 1 WHERE profile_id = ? AND name = ? AND is_active = 0",
-    );
-    const unitSet = new Set<string>();
-    for (const r of purchasesRows) unitSet.add(r.unit);
-    for (const r of monthlyRows) unitSet.add(r.unit);
-    for (const name of unitSet) {
-      insertUnit.run(profileId, name);
-      reactivateUnit.run(profileId, name);
-    }
-
-    // Cache unit IDs
-    const unitIdCache = new Map<string, number>();
-    const getUnitId = (name: string) => {
-      if (unitIdCache.has(name)) return unitIdCache.get(name);
-      const uid = db.prepare<[string, number], { id: number }>(
-        "SELECT id FROM business_units WHERE name = ? AND profile_id = ?",
-      ).get(name, profileId)?.id;
-      if (uid) unitIdCache.set(name, uid);
-      return uid;
-    };
-
-    // Ensure suppliers
-    const insertSupplier = db.prepare("INSERT OR IGNORE INTO suppliers (profile_id, ruc, name) VALUES (?, ?, ?)");
-    const supplierIds = new Map<string, number>();
-    for (const r of purchasesRows) {
-      if (r.ruc && r.provider) {
-        insertSupplier.run(profileId, r.ruc, r.provider);
-        const sid = db.prepare<[number, string], { id: number }>(
-          "SELECT id FROM suppliers WHERE profile_id = ? AND ruc = ?",
-        ).get(profileId, r.ruc)?.id;
-        if (sid) supplierIds.set(r.ruc, sid);
-      }
-    }
-
-    // Insert purchases with dedup
-    const checkPurchase = db.prepare<[number, number, number, number, string, string, number], { id: number }>(
-      `SELECT id FROM purchases
-       WHERE profile_id = ? AND business_unit_id = ? AND period_year = ? AND period_month = ?
-         AND purchase_date = ? AND supplier_name = ? AND amount = ?`,
-    );
-    const insertPurchase = db.prepare(`
-      INSERT INTO purchases (profile_id, business_unit_id, period_month, period_year, purchase_date, ruc, supplier_name, invoice_number, amount, payment, note, supplier_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    let inserted = 0;
-    const tx = db.transaction(() => {
-      for (const r of purchasesRows) {
-        const uid = getUnitId(r.unit);
-        if (!uid) continue;
-        const month = parseInt(r.month, 10);
-        const year = parseInt(r.year, 10);
-        const amount = parseFloat(r.amount);
-        if (isNaN(month) || isNaN(year) || isNaN(amount)) continue;
-        const date = r.date || `${year}-${String(month).padStart(2, "0")}-01`;
-
-        const exists = checkPurchase.get(profileId, uid, year, month, date, r.provider, amount);
-        if (exists) continue;
-
-        insertPurchase.run(
-          profileId, uid, month, year, date,
-          r.ruc || null, r.provider, r.invoice || null,
-          amount, r.payment || null, r.note || null,
-          r.ruc ? (supplierIds.get(r.ruc) ?? null) : null,
-        );
-        inserted++;
-      }
-    });
-    tx();
-
-    // Upsert monthly sales
-    const upsertSale = db.prepare(`
-      INSERT INTO monthly_sales (profile_id, business_unit_id, period_month, period_year, total_amount, saldo_anterior, saldo_siguiente, renta, igv_pago)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(profile_id, business_unit_id, period_month, period_year)
-      DO UPDATE SET total_amount = excluded.total_amount, saldo_anterior = excluded.saldo_anterior,
-        saldo_siguiente = excluded.saldo_siguiente, renta = excluded.renta, igv_pago = excluded.igv_pago, updated_at = CURRENT_TIMESTAMP
-    `);
-
-    let salesDone = 0;
-    const tx2 = db.transaction(() => {
-      for (const r of monthlyRows) {
-        const uid = getUnitId(r.unit);
-        if (!uid) continue;
-        const month = parseInt(r.month, 10);
-        const year = parseInt(r.year, 10);
-        if (isNaN(month) || isNaN(year)) continue;
-        const venta = parseFloat(r.venta_mes) || 0;
-        if (venta <= 0) continue;
-        const saldoAnt = parseFloat(r.saldo_anterior) || 0;
-        const saldoSig = parseFloat(r.saldo_siguiente) || 0;
-        const renta = parseFloat(r.renta) || 0;
-        const igv = parseFloat(r.igv_pago) || 0;
-
-        upsertSale.run(profileId, uid, month, year, venta, saldoAnt, saldoSig, renta, igv);
-        salesDone++;
-      }
-    });
-    tx2();
-
-    console.log(`[recover] Inserted ${inserted} purchases, ${salesDone} monthly sales from CSVs`);
-
-    // Verify
-    const totalP = db.prepare<[], { count: number }>("SELECT COUNT(*) AS count FROM purchases").get()?.count ?? 0;
-    const totalS = db.prepare<[], { count: number }>("SELECT COUNT(*) AS count FROM monthly_sales").get()?.count ?? 0;
-    const unitCount = db.prepare<[string], { count: number }>(
-      "SELECT COUNT(*) AS count FROM purchases WHERE business_unit_id = (SELECT id FROM business_units WHERE name = ? LIMIT 1)",
-    ).get("UNIT_A")?.count ?? 0;
-    console.log(`[recover] DB has ${totalP} purchases total, ${totalS} monthly sales. UNIT_A: ${unitCount} purchases`);
-  } catch (err) {
-    console.error("[recover] Failed:", err);
-  }
 }
 
 type BusinessUnitRow = {

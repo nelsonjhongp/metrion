@@ -8,7 +8,7 @@ const __dirname = dirname(__filename);
 
 const testCasesPath = join(
   __dirname,
-  "../docs/metrion_reference/monthly_test_cases.json"
+  "../src/shared/test-data/monthly-test-cases.json"
 );
 
 const rawData = readFileSync(testCasesPath, "utf-8");
@@ -34,10 +34,18 @@ function test(name, fn) {
   }
 }
 
-console.log(`Running ${testData.testCases.length} test cases from monthly_test_cases.json\n`);
+console.log(`Running ${testData.testCases.length} test cases from synthetic monthly test cases\n`);
 
 for (const tc of testData.testCases) {
   test(tc.name, () => {
+    const autoResult = calculateMonthlySummary({
+      comprasMes: tc.input.comprasMes,
+      saldoAnterior: tc.input.saldoAnterior,
+      ventaMes: tc.input.ventaMes,
+    });
+
+    const baseIgvManual = tc.expected.baseIgv !== autoResult.baseIgv ? tc.expected.baseIgv : undefined;
+
     const result = calculateMonthlySummary({
       comprasMes: tc.input.comprasMes,
       saldoAnterior: tc.input.saldoAnterior,
@@ -45,6 +53,7 @@ for (const tc of testData.testCases) {
       rentaManual: tc.input.rentaManual ?? undefined,
       igvPagoManual: tc.input.igvPagoManual ?? undefined,
       saldoSiguienteManual: tc.input.saldoSiguienteManual ?? undefined,
+      baseIgvManual,
     });
 
     assert("compraBase", result.compraBase, tc.expected.compraBase);

@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 const testCasesPath = path.join(
   __dirname,
-  "../../docs/metrion_reference/monthly_test_cases.json"
+  "./test-data/monthly-test-cases.json"
 );
 
 const rawData = fs.readFileSync(testCasesPath, "utf-8");
@@ -34,7 +34,7 @@ function test(name: string, fn: () => void) {
   }
 }
 
-console.log(`Running ${testData.testCases.length} test cases from monthly_test_cases.json\n`);
+console.log(`Running ${testData.testCases.length} test cases from synthetic monthly test cases\n`);
 
 for (const tc of testData.testCases) {
   test(tc.name, () => {

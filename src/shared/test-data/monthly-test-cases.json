@@ -1,0 +1,141 @@
+{
+  "testCases": [
+    {
+      "name": "UNIT_A feb 2026",
+      "input": { "comprasMes": 25065.1, "saldoAnterior": 1449, "ventaMes": 26006 },
+      "expected": {
+        "compraBase": 26514.1,
+        "diferencia": -508.1,
+        "baseIgv": 0,
+        "saldoSiguiente": 508.1,
+        "renta": 331,
+        "igvPago": 0,
+        "totalPagar": 331
+      }
+    },
+    {
+      "name": "UNIT_A mar 2026",
+      "input": { "comprasMes": 35273.06, "saldoAnterior": 508, "ventaMes": 34364 },
+      "expected": {
+        "compraBase": 35781.06,
+        "diferencia": -1417.06,
+        "baseIgv": 0,
+        "saldoSiguiente": 1417.06,
+        "renta": 437,
+        "igvPago": 0,
+        "totalPagar": 437
+      }
+    },
+    {
+      "name": "UNIT_A abr 2026",
+      "input": { "comprasMes": 27252.66, "saldoAnterior": 1414, "ventaMes": 29077 },
+      "expected": {
+        "compraBase": 28666.66,
+        "diferencia": 410.34,
+        "baseIgv": 410.34,
+        "saldoSiguiente": 0,
+        "renta": 370,
+        "igvPago": 63,
+        "totalPagar": 433
+      }
+    },
+    {
+      "name": "UNIT_B feb 2026",
+      "input": { "comprasMes": 5790, "saldoAnterior": 819, "ventaMes": 6482 },
+      "expected": {
+        "compraBase": 6609,
+        "diferencia": -127,
+        "baseIgv": 0,
+        "saldoSiguiente": 127,
+        "renta": 82,
+        "igvPago": 0,
+        "totalPagar": 82
+      }
+    },
+    {
+      "name": "UNIT_B mar 2026",
+      "input": { "comprasMes": 6084.6, "saldoAnterior": 127, "ventaMes": 5859 },
+      "expected": {
+        "compraBase": 6211.6,
+        "diferencia": -352.6,
+        "baseIgv": 0,
+        "saldoSiguiente": 352.6,
+        "renta": 74,
+        "igvPago": 0,
+        "totalPagar": 74
+      }
+    },
+    {
+      "name": "UNIT_B abr 2026",
+      "input": { "comprasMes": 3814.62, "saldoAnterior": 352.6, "ventaMes": 3962 },
+      "expected": {
+        "compraBase": 4167.22,
+        "diferencia": -205.22,
+        "baseIgv": 0,
+        "saldoSiguiente": 205.22,
+        "renta": 50,
+        "igvPago": 0,
+        "totalPagar": 50
+      }
+    },
+    {
+      "name": "UNIT_C feb 2026",
+      "input": { "comprasMes": 14943, "saldoAnterior": 2075, "ventaMes": 17077 },
+      "expected": {
+        "compraBase": 17018,
+        "diferencia": 59,
+        "baseIgv": 59,
+        "saldoSiguiente": 0,
+        "renta": 217,
+        "igvPago": 9,
+        "totalPagar": 226
+      }
+    },
+    {
+      "name": "UNIT_C mar 2026",
+      "input": { "comprasMes": 16452.4, "saldoAnterior": 0, "ventaMes": 14013 },
+      "expected": {
+        "compraBase": 16452.4,
+        "diferencia": -2439.4,
+        "baseIgv": 0,
+        "saldoSiguiente": 2439.4,
+        "renta": 178,
+        "igvPago": 0,
+        "totalPagar": 178
+      }
+    },
+    {
+      "name": "UNIT_C abr 2026",
+      "input": { "comprasMes": 8299.1, "saldoAnterior": 2439.4, "ventaMes": 9447 },
+      "expected": {
+        "compraBase": 10738.5,
+        "diferencia": -1291.5,
+        "baseIgv": 0,
+        "saldoSiguiente": 1291.5,
+        "renta": 120,
+        "igvPago": 0,
+        "totalPagar": 120
+      }
+    },
+    {
+      "name": "Manual override respects user values",
+      "input": {
+        "comprasMes": 1000,
+        "saldoAnterior": 0,
+        "ventaMes": 2000,
+        "rentaManual": 30,
+        "igvPagoManual": 50,
+        "saldoSiguienteManual": 200
+      },
+      "expected": {
+        "compraBase": 1000,
+        "diferencia": 1000,
+        "baseIgv": 1000,
+        "saldoSiguiente": 200,
+        "renta": 30,
+        "igvPago": 50,
+        "totalPagar": 80
+      }
+    }
+  ]
+}
