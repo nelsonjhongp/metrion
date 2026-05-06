@@ -16,7 +16,13 @@ export const supplierLookupQuerySchema = supplierQuerySchema.extend({
 });
 
 export const supplierInputSchema = supplierQuerySchema.extend({
-  ruc: z.string().trim().regex(/^\d{1,11}$/, "RUC invalido"),
+  ruc: z
+    .string()
+    .trim()
+    .regex(/^\d{0,11}$/, "RUC invalido")
+    .transform((value) => (value.length === 0 ? null : value))
+    .nullable()
+    .optional(),
   name: z.string().trim().min(1, "Nombre requerido"),
   note: optionalText,
 });
@@ -26,8 +32,7 @@ export const supplierUpdateInputSchema = supplierInputSchema.extend({
 });
 
 export const supplierFormSchema = z.object({
-  ruc: z.string().trim().regex(/^\d{1,11}$/, "RUC invalido"),
+  ruc: z.string().trim().regex(/^\d{0,11}$/, "RUC invalido"),
   name: z.string().trim().min(1, "Nombre requerido"),
   note: z.string().trim(),
 });
-
