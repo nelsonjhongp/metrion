@@ -1,14 +1,20 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { supplierFormSchema } from "../../shared/supplier-validation";
 import type { Supplier, SupplierFormValues } from "../../shared/types";
+import { Alert } from "./ui/alert";
 import { Button } from "./ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 
 type SupplierDialogProps = {
+  footerHint?: string | null;
   open: boolean;
   supplier?: Supplier | null;
+  draftValues?: Partial<SupplierFormValues> | null;
+  similarSuppliers?: Supplier[];
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: SupplierFormValues) => Promise<void>;
 };
@@ -21,23 +27,37 @@ const emptyValues: SupplierFormValues = {
 
 function supplierValues(supplier: Supplier): SupplierFormValues {
   return {
-    ruc: supplier.ruc,
+    ruc: supplier.ruc ?? "",
     name: supplier.name,
     note: supplier.note ?? "",
   };
 }
 
 export function SupplierDialog({
+  footerHint,
   open,
   supplier,
+  draftValues,
+  similarSuppliers = [],
   onOpenChange,
   onSubmit,
 }: SupplierDialogProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const initialValues = useMemo(
-    () => (supplier ? supplierValues(supplier) : emptyValues),
-    [supplier],
+    () => {
+      if (supplier) {
+        return supplierValues(supplier);
+      }
+
+      return {
+        ...emptyValues,
+        ruc: draftValues?.ruc ?? "",
+        name: draftValues?.name ?? "",
+        note: draftValues?.note ?? "",
+      };
+    },
+    [draftValues?.name, draftValues?.note, draftValues?.ruc, supplier],
   );
   const {
     formState: { errors },
@@ -87,31 +107,46 @@ export function SupplierDialog({
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-slate-950/35" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-white p-5 shadow-soft">
-          <Dialog.Title className="text-base font-semibold text-foreground">
-            {supplier ? "Editar proveedor" : "Nuevo proveedor"}
-          </Dialog.Title>
-          <form className="mt-4 space-y-3" onSubmit={handleSubmit(submit)}>
-            <Field label="RUC" error={errors.ruc?.message}>
-              <input className="field" maxLength={11} {...register("ruc")} />
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent className="w-[440px]">
+        <DialogHeader>
+          <DialogTitle>{supplier ? "Editar proveedor" : "Nuevo proveedor"}</DialogTitle>
+        </DialogHeader>
+        <form className="mt-4 space-y-3" onSubmit={handleSubmit(submit)}>
+            <Field label="RUC (opcional)" error={errors.ruc?.message}>
+              <Input maxLength={11} {...register("ruc")} />
             </Field>
             <Field label="Nombre" error={errors.name?.message}>
-              <input className="field" {...register("name")} />
+              <Input {...register("name")} />
             </Field>
             <Field label="Nota" error={errors.note?.message}>
-              <textarea
-                className="field h-20 resize-none py-2"
-                {...register("note")}
-              />
+              <Textarea {...register("note")} />
             </Field>
-            {formError && <p className="text-sm text-red-600">{formError}</p>}
-            <div className="flex justify-end gap-2 pt-2">
+            {similarSuppliers.length > 0 && (
+              <Alert variant="warning">
+                <p className="font-medium">Posibles coincidencias</p>
+                <p className="mt-1 text-xs">
+                  Revisa si alguno ya existe antes de crear otro proveedor.
+                </p>
+                <ul className="mt-2 space-y-1 text-xs">
+                  {similarSuppliers.slice(0, 4).map((candidate) => (
+                    <li key={candidate.id}>
+                      {candidate.name}
+                      {candidate.ruc ? ` (${candidate.ruc})` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </Alert>
+            )}
+            {formError && <Alert variant="danger">{formError}</Alert>}
+            {footerHint && (
+              <p className="text-xs text-muted-foreground">{footerHint}</p>
+            )}
+            <DialogFooter>
               <Button
                 disabled={isSaving}
                 onClick={() => onOpenChange(false)}
+                type="button"
                 variant="secondary"
               >
                 Cancelar
@@ -119,11 +154,10 @@ export function SupplierDialog({
               <Button disabled={isSaving} type="submit">
                 Guardar
               </Button>
-            </div>
+            </DialogFooter>
           </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -138,8 +172,7 @@ function Field({ children, error, label }: FieldProps) {
     <label className="block">
       <span className="text-sm font-medium">{label}</span>
       <div className="mt-1">{children}</div>
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-danger-foreground">{error}</p>}
     </label>
   );
 }
-
