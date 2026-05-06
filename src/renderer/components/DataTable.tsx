@@ -12,15 +12,21 @@ type DataTableProps<T> = {
   columns: DataTableColumn<T>[];
   rows: T[];
   emptyText: string;
+  getRowKey?: (row: T, index: number) => string | number;
 };
 
-export function DataTable<T>({ columns, rows, emptyText }: DataTableProps<T>) {
+export function DataTable<T>({
+  columns,
+  rows,
+  emptyText,
+  getRowKey,
+}: DataTableProps<T>) {
   if (rows.length === 0) {
     return <EmptyState title={emptyText} />;
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-white">
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
       <table className="w-full border-collapse text-sm">
         <thead className="bg-muted text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
@@ -36,7 +42,7 @@ export function DataTable<T>({ columns, rows, emptyText }: DataTableProps<T>) {
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => (
-            <tr className="border-t border-border" key={rowIndex}>
+            <tr className="border-t border-border" key={getRowKey ? getRowKey(row, rowIndex) : rowIndex}>
               {columns.map((column) => (
                 <td className={column.className ?? "px-3 py-2"} key={column.key}>
                   {column.render(row)}
@@ -49,4 +55,3 @@ export function DataTable<T>({ columns, rows, emptyText }: DataTableProps<T>) {
     </div>
   );
 }
-

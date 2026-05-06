@@ -3,21 +3,25 @@ import {
   CalendarCheck,
   ChartBar,
   ClipboardList,
+  LogOut,
+  Settings,
   UsersRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import logoIcon from "../assets/metrion-logo-icon.svg";
 import { TopbarFilters } from "./TopbarFilters";
 import { cn } from "../lib/utils";
+import { useAppStore } from "../stores/app-store";
 
 export type AppPage =
   | "control"
+  | "dashboard"
   | "purchases"
   | "suppliers"
   | "history"
   | "reports"
-  | "sales"
-  | "summary"
-  | "closing";
+  | "manage"
+  | "data";
 
 type NavItem = {
   id: AppPage;
@@ -28,25 +32,43 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { id: "control", label: "Control del mes", icon: CalendarCheck },
+  { id: "dashboard", label: "Dashboard", icon: ChartBar },
   { id: "purchases", label: "Compras", icon: ClipboardList },
   { id: "suppliers", label: "Proveedores", icon: UsersRound },
-  { id: "history", label: "Historial", icon: BookOpen, disabled: true },
-  { id: "reports", label: "Reportes", icon: ChartBar, disabled: true },
+  { id: "history", label: "Historial", icon: BookOpen },
+  { id: "reports", label: "Excel", icon: ChartBar },
 ];
 
 type AppLayoutProps = {
   activePage: AppPage;
   children: ReactNode;
   onNavigate: (page: AppPage) => void;
+  onLogout: () => void;
 };
 
-export function AppLayout({ activePage, children, onNavigate }: AppLayoutProps) {
+export function AppLayout({
+  activePage,
+  children,
+  onNavigate,
+  onLogout,
+}: AppLayoutProps) {
+  const profileName = useAppStore(
+    (s) => s.profiles.find((p) => p.id === s.profileId)?.name ?? "",
+  );
+
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-[#0F1525] bg-[#060B1A] px-3 py-4 text-white">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar px-3 py-4 text-sidebar-foreground">
         <div className="mb-6 px-2">
-          <p className="text-lg font-semibold tracking-tight">Metrion</p>
-          <p className="text-xs text-slate-400">control mensual</p>
+          <div className="flex items-center gap-2.5">
+            <img alt="Metrion" className="size-7 shrink-0" src={logoIcon} />
+            <div className="min-w-0">
+              <p className="text-base font-semibold tracking-tight truncate">Metrion</p>
+              <p className="truncate text-[11px] text-sidebar-foreground/65">
+                {profileName || "control mensual"}
+              </p>
+            </div>
+          </div>
         </div>
         <nav className="flex-1 space-y-1">
           {navItems.map((item) => {
@@ -58,21 +80,21 @@ export function AppLayout({ activePage, children, onNavigate }: AppLayoutProps) 
                   "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm transition-colors",
                   item.disabled && "cursor-not-allowed opacity-40",
                   isActive && !item.disabled
-                    ? "bg-white text-slate-950"
+                    ? "bg-sidebar-active text-sidebar-active-foreground"
                     : !item.disabled
-                      ? "text-slate-300 hover:bg-white/10 hover:text-white"
-                      : "text-slate-500",
+                      ? "text-sidebar-foreground/80 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
+                      : "text-sidebar-foreground/45",
                 )}
                 disabled={item.disabled}
                 key={item.id}
                 onClick={() => onNavigate(item.id)}
-                title={item.disabled ? "Proximamente" : undefined}
+                title={item.disabled ? "Próximamente" : undefined}
                 type="button"
               >
-                <Icon className="h-4 w-4" />
+                <Icon aria-hidden="true" className="h-4 w-4" />
                 {item.label}
                 {item.disabled && (
-                  <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-600">
+                  <span className="ml-auto text-[10px] uppercase tracking-wider text-sidebar-foreground/35">
                     pronto
                   </span>
                 )}
@@ -80,13 +102,32 @@ export function AppLayout({ activePage, children, onNavigate }: AppLayoutProps) 
             );
           })}
         </nav>
+        <div className="space-y-1 border-t border-sidebar-border pt-3">
+          <button
+            className={cn(
+              "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm transition-colors",
+              activePage === "manage"
+                ? "bg-sidebar-active text-sidebar-active-foreground"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground",
+            )}
+            onClick={() => onNavigate("manage")}
+            type="button"
+          >
+            <Settings aria-hidden="true" className="h-4 w-4" />
+            Gestionar
+          </button>
+          <button
+            className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
+            onClick={onLogout}
+            type="button"
+          >
+            <LogOut aria-hidden="true" className="h-4 w-4" />
+            Salir
+          </button>
+        </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center gap-4 border-b border-border bg-surface px-6">
-          <div>
-            <p className="text-sm font-semibold">Periodo de trabajo</p>
-            <p className="text-xs text-muted-foreground">perfil, unidad y mes</p>
-          </div>
+        <header className="flex h-[54px] shrink-0 items-center border-b border-border bg-surface px-5">
           <TopbarFilters />
         </header>
         <main className="flex-1 overflow-auto">
@@ -98,4 +139,3 @@ export function AppLayout({ activePage, children, onNavigate }: AppLayoutProps) 
     </div>
   );
 }
-

@@ -1,26 +1,35 @@
 import { format } from "date-fns";
 import {
   Check,
-  Download,
+  FileSpreadsheet,
   Lock,
   Pencil,
   Plus,
   Trash2,
   Unlock,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { calculateMonthlySummary } from "../../shared/monthly-calculations";
+import { monthlySaleFormSchema } from "../../shared/sales-validation";
 import type {
   MonthlyClosingChecklist,
   MonthlySale,
+  MonthlySaleFormValues,
   Purchase,
   PurchaseFormValues,
 } from "../../shared/types";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { MoneyText } from "../components/MoneyText";
+import { PageHeader } from "../components/PageHeader";
 import { PurchaseDialog } from "../components/PurchaseDialog";
+import { TablePaginationControls } from "../components/TablePaginationControls";
+import { TableToolbar, TableToolbarField } from "../components/TableToolbar";
+import { Alert } from "../components/ui/alert";
+import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { Separator } from "../components/ui/separator";
+import { Skeleton } from "../components/ui/skeleton";
 import { cn } from "../lib/utils";
 import { useAppStore } from "../stores/app-store";
 
@@ -28,6 +37,8 @@ const MONTHS = [
   "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre",
 ];
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 function formatPen(value: number): string {
   return new Intl.NumberFormat("es-PE", {
@@ -37,12 +48,30 @@ function formatPen(value: number): string {
   }).format(value);
 }
 
-export function MonthlyControlPage() {
+function moneyDisplay(value: number): string {
+  return value === 0 ? "" : String(value);
+}
+
+function parseMoney(value: string): number {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return 0;
+  return Number(value.replace(",", ".")) || 0;
+}
+
+type MonthlyControlPageProps = {
+  onOpenSupplierCatalogFromPurchase: () => void;
+};
+
+export function MonthlyControlPage({ onOpenSupplierCatalogFromPurchase }: MonthlyControlPageProps) {
   const {
     businessUnitId,
     closingStatus,
     month,
+    purchaseSupplierFlow,
     profileId,
+    clearPurchaseSupplierFlow,
+    acknowledgePurchaseSupplierFlowResume,
+    startPurchaseSupplierFlow,
     setClosingStatus,
     year,
   } = useAppStore();
@@ -61,16 +90,32 @@ export function MonthlyControlPage() {
 
   const [purchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
+  const [purchaseSearch, setPurchaseSearch] = useState("");
+  const [purchasePage, setPurchasePage] = useState(1);
+  const [purchasePageSize, setPurchasePageSize] = useState(10);
 
   const [saleTotal, setSaleTotal] = useState("");
   const [saleNota, setSaleNota] = useState("");
+  const [adjustForm, setAdjustForm] = useState<Pick<MonthlySaleFormValues, "saldoSiguiente" | "renta" | "igvPago" | "baseIgv">>({
+    saldoSiguiente: "",
+    renta: "",
+    igvPago: "",
+    baseIgv: "",
+  });
+  const [savedBaseIgvManual, setSavedBaseIgvManual] = useState<number | null>(null);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const adjustRef = useRef<HTMLDivElement>(null);
   const [isSavingSale, setIsSavingSale] = useState(false);
   const [saleMessage, setSaleMessage] = useState<string | null>(null);
 
   const [isClosing, setIsClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
 
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+
   const isClosed = closingStatus === "closed";
+  const readyToClose = checklist.hasPurchases && checklist.hasSales && !isClosed;
   const monthName = MONTHS[month] ?? "";
   const unitName = useAppStore((s) => s.businessUnits.find((u) => u.id === s.businessUnitId)?.name ?? "");
 
@@ -101,12 +146,31 @@ export function MonthlyControlPage() {
       setClosingStatus(closing.status);
 
       if (sale) {
+        const autoCalc = calculateMonthlySummary({
+          comprasMes: purchasesResponse.totalAmount,
+          saldoAnterior: sale.saldoAnterior,
+          ventaMes: sale.totalAmount,
+        });
         setSaldoAnterior(sale.saldoAnterior);
         setSaleTotal(String(sale.totalAmount));
         setSaleNota(sale.nota ?? "");
+        setSavedBaseIgvManual(sale.baseIgvManual);
+        setAdjustForm({
+          saldoSiguiente: Math.abs(sale.saldoSiguiente - autoCalc.saldoSiguienteSugerido) > 0.009 ? moneyDisplay(sale.saldoSiguiente) : "",
+          renta: Math.abs(sale.renta - autoCalc.rentaSugerida) > 0.009 ? String(sale.renta) : "",
+          igvPago: Math.abs(sale.igvPago - autoCalc.igvPagoSugerido) > 0.009 ? String(sale.igvPago) : "",
+          baseIgv: sale.baseIgvManual !== null ? String(sale.baseIgvManual) : "",
+        });
       } else {
         setSaleTotal("");
         setSaleNota("");
+        setSavedBaseIgvManual(null);
+        setAdjustForm({
+          saldoSiguiente: "",
+          renta: "",
+          igvPago: "",
+          baseIgv: "",
+        });
 
         let prevSaldo = 0;
         let prevMonth = month - 1;
@@ -140,6 +204,17 @@ export function MonthlyControlPage() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    if (
+      purchaseSupplierFlow?.resumeRequested &&
+      purchaseSupplierFlow.returnPage === "control"
+    ) {
+      setEditingPurchase(purchaseSupplierFlow.purchase);
+      setPurchaseDialogOpen(true);
+      acknowledgePurchaseSupplierFlowResume();
+    }
+  }, [acknowledgePurchaseSupplierFlowResume, purchaseSupplierFlow]);
 
   // --- Purchase handlers ---
   function openNewPurchase() {
@@ -178,6 +253,7 @@ export function MonthlyControlPage() {
       await window.metrion.createPurchase(input);
     }
 
+    clearPurchaseSupplierFlow();
     await loadAll();
   }
 
@@ -194,28 +270,28 @@ export function MonthlyControlPage() {
   async function saveSale() {
     if (!profileId || !businessUnitId) return;
 
-    const amount = Number(saleTotal.replace(",", "."));
-    if (!Number.isFinite(amount) || amount < 0) {
-      setSaleMessage("Monto invalido.");
-      return;
-    }
-
     setIsSavingSale(true);
     setSaleMessage(null);
 
     try {
-      const saved = await window.metrion.saveMonthlySale({
-        profileId,
-        businessUnitId,
-        month,
-        year,
-        totalAmount: amount,
-        nota: emptyToNull(saleNota),
+      const saved = await persistMonthlySale();
+      const autoCalc = calculateMonthlySummary({
+        comprasMes: totalPurchases,
+        saldoAnterior: saved.saldoAnterior,
+        ventaMes: saved.totalAmount,
       });
       setMonthlySale(saved);
       setSaleTotal(String(saved.totalAmount));
       setSaleNota(saved.nota ?? "");
       setSaldoAnterior(saved.saldoAnterior);
+      setSavedBaseIgvManual(saved.baseIgvManual);
+      setAdjustForm({
+        saldoSiguiente: Math.abs(saved.saldoSiguiente - autoCalc.saldoSiguienteSugerido) > 0.009 ? moneyDisplay(saved.saldoSiguiente) : "",
+        renta: Math.abs(saved.renta - autoCalc.rentaSugerida) > 0.009 ? String(saved.renta) : "",
+        igvPago: Math.abs(saved.igvPago - autoCalc.igvPagoSugerido) > 0.009 ? String(saved.igvPago) : "",
+        baseIgv: saved.baseIgvManual !== null ? String(saved.baseIgvManual) : "",
+      });
+      setAdjustOpen(false);
       setSaleMessage("Venta guardada");
     } catch (saveError) {
       setSaleMessage(
@@ -224,6 +300,71 @@ export function MonthlyControlPage() {
     } finally {
       setIsSavingSale(false);
     }
+  }
+
+  async function persistMonthlySale(): Promise<MonthlySale> {
+    if (!profileId || !businessUnitId) {
+      throw new Error("Selecciona perfil y unidad.");
+    }
+
+    const formData: MonthlySaleFormValues = {
+      totalAmount: saleTotal,
+      saldoAnterior: moneyDisplay(saldoAnterior),
+      saldoSiguiente: adjustForm.saldoSiguiente,
+      renta: adjustForm.renta,
+      igvPago: adjustForm.igvPago,
+      baseIgv: adjustForm.baseIgv,
+      nota: saleNota,
+    };
+
+    const parsed = monthlySaleFormSchema.safeParse(formData);
+    if (!parsed.success) {
+      throw new Error(parsed.error.issues[0]?.message ?? "Datos invalidos.");
+    }
+
+    const normalizedSaleTotal = saleTotal.trim();
+    if (normalizedSaleTotal.length === 0) {
+      throw new Error("Ingresa el total de ventas del mes.");
+    }
+
+    const amount = Number(normalizedSaleTotal.replace(",", "."));
+    const autoCalc = calculateMonthlySummary({
+      comprasMes: totalPurchases,
+      saldoAnterior,
+      ventaMes: amount,
+    });
+
+    const manualBaseIgv = adjustForm.baseIgv.trim().length > 0
+      ? parseMoney(adjustForm.baseIgv)
+      : savedBaseIgvManual;
+
+    const saved = await window.metrion.saveMonthlySale({
+      profileId,
+      businessUnitId,
+      month,
+      year,
+      totalAmount: amount,
+      saldoAnterior,
+      saldoSiguiente: resolveManualValue(
+        adjustForm.saldoSiguiente,
+        monthlySale?.saldoSiguiente ?? autoCalc.saldoSiguiente,
+        autoCalc.saldoSiguienteSugerido,
+      ),
+      renta: resolveManualValue(
+        adjustForm.renta,
+        monthlySale?.renta ?? autoCalc.renta,
+        autoCalc.rentaSugerida,
+      ),
+      igvPago: resolveManualValue(
+        adjustForm.igvPago,
+        monthlySale?.igvPago ?? autoCalc.igvPago,
+        autoCalc.igvPagoSugerido,
+      ),
+      baseIgvManual: manualBaseIgv !== 0 ? manualBaseIgv : null,
+      nota: emptyToNull(saleNota),
+    });
+
+    return saved;
   }
 
   // --- Closing handlers ---
@@ -261,59 +402,152 @@ export function MonthlyControlPage() {
     }
   }
 
+  // --- Export handler ---
+  async function handleExport() {
+    if (!profileId || !businessUnitId) return;
+
+    setIsExporting(true);
+    setExportMessage(null);
+
+    try {
+      const result = await window.metrion.exportMonthlyXlsx({
+        profileId,
+        businessUnitId,
+        month,
+        year,
+        unitName,
+        monthName,
+      });
+
+      if (result.success) {
+        setExportMessage("Exportado correctamente");
+      } else if (result.error) {
+        setExportMessage(result.error);
+      }
+    } catch {
+      setExportMessage("No se pudo exportar.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   // --- Calculations ---
   const saleAmount = monthlySale ? monthlySale.totalAmount : 0;
+  const baseAutoCalc = calculateMonthlySummary({
+    comprasMes: totalPurchases,
+    saldoAnterior,
+    ventaMes: saleAmount,
+  });
+
+  const currentBaseIgvManual = adjustForm.baseIgv.trim().length > 0
+    ? parseMoney(adjustForm.baseIgv)
+    : savedBaseIgvManual;
+  const currentSaldoManual = resolveCurrentManualValue(
+    adjustForm.saldoSiguiente,
+    monthlySale?.saldoSiguiente ?? null,
+    baseAutoCalc.saldoSiguienteSugerido,
+  );
+  const currentRentaManual = resolveCurrentManualValue(
+    adjustForm.renta,
+    monthlySale?.renta ?? null,
+    baseAutoCalc.rentaSugerida,
+  );
+  const currentIgvManual = resolveCurrentManualValue(
+    adjustForm.igvPago,
+    monthlySale?.igvPago ?? null,
+    baseAutoCalc.igvPagoSugerido,
+  );
+
   const calc = calculateMonthlySummary({
     comprasMes: totalPurchases,
     saldoAnterior,
     ventaMes: saleAmount,
-    rentaManual: monthlySale?.renta && monthlySale.renta !== 0 ? monthlySale.renta : null,
-    igvPagoManual: monthlySale?.igvPago && monthlySale.igvPago !== 0 ? monthlySale.igvPago : null,
-    saldoSiguienteManual: monthlySale?.saldoSiguiente && monthlySale.saldoSiguiente !== 0 ? monthlySale.saldoSiguiente : null,
-    baseIgvManual: monthlySale?.baseIgvManual,
+    rentaManual: currentRentaManual,
+    igvPagoManual: currentIgvManual,
+    saldoSiguienteManual: currentSaldoManual,
+    baseIgvManual: currentBaseIgvManual,
   });
 
   const hasSaleManual = monthlySale !== null && monthlySale.totalAmount > 0;
-  const hasManualSaldo = monthlySale !== null && monthlySale.saldoSiguiente > 0;
-  const hasManualRenta = monthlySale !== null && monthlySale.renta > 0;
-  const hasManualIgv = monthlySale !== null && monthlySale.igvPago > 0;
-  const hasManualBaseIgv = monthlySale !== null && monthlySale.baseIgvManual !== null;
+  const hasManualSaldo = currentSaldoManual !== null;
+  const hasManualRenta = currentRentaManual !== null;
+  const hasManualIgv = currentIgvManual !== null;
+  const hasManualBaseIgv = currentBaseIgvManual !== null;
 
   const purchaseDateDefault = getDefaultPurchaseDate(month, year);
+  const filteredPurchases = useMemo(() => {
+    const query = purchaseSearch.trim().toLowerCase();
+    if (!query) return purchases;
+
+    return purchases.filter((purchase) =>
+      [
+        purchase.purchaseDate,
+        purchase.ruc ?? "",
+        purchase.supplierName,
+        purchase.invoiceNumber ?? "",
+        purchase.payment ?? "",
+        purchase.note ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [purchaseSearch, purchases]);
+  const purchaseTotalPages = Math.max(1, Math.ceil(filteredPurchases.length / purchasePageSize));
+  const currentPurchasePage = Math.min(purchasePage, purchaseTotalPages);
+  const visiblePurchases = filteredPurchases.slice(
+    (currentPurchasePage - 1) * purchasePageSize,
+    currentPurchasePage * purchasePageSize,
+  );
+
+  useEffect(() => {
+    setPurchasePage(1);
+  }, [purchasePageSize, purchaseSearch, month, year, businessUnitId]);
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Control del mes
-          </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {monthName} {year}{unitName ? ` · ${unitName}` : ""}
-          </p>
-        </div>
-        <Button disabled size="sm" variant="secondary" title="Proximamente">
-          <Download className="mr-1.5 h-3.5 w-3.5" />
-          Exportar
-        </Button>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        actions={(
+          <div className="flex flex-col items-end gap-1 pt-0.5">
+            <Button
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              disabled={isExporting || !profileId || !businessUnitId}
+              onClick={() => void handleExport()}
+              size="sm"
+            >
+              <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />
+              {isExporting ? "Exportando…" : "Exportar"}
+            </Button>
+            {exportMessage && (
+              <span
+                aria-live="polite"
+                className={cn(
+                  "text-xs",
+                  exportMessage === "Exportado correctamente"
+                    ? "text-success-foreground"
+                    : "text-danger-foreground",
+                )}
+              >
+                {exportMessage}
+              </span>
+            )}
+          </div>
+        )}
+        description="Seguimiento y cierre del periodo"
+        title="Control del mes"
+      />
 
-      {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <Alert aria-live="polite" variant="danger">{error}</Alert>}
 
       {isClosed && (
-        <div className="rounded-md border border-stone-300 bg-stone-100 px-3 py-2 text-sm text-stone-700">
-          <Lock className="mr-1.5 inline h-3.5 w-3.5" />
+        <Alert variant="default">
+          <Lock aria-hidden="true" className="mr-1.5 inline h-3.5 w-3.5" />
           Este periodo esta cerrado. Para corregir informacion, reabre el mes.
-        </div>
+        </Alert>
       )}
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SummaryCard
           label="Compras del mes"
           value={formatPen(totalPurchases)}
@@ -332,11 +566,6 @@ export function MonthlyControlPage() {
           value={formatPen(calc.totalPagar)}
           accent
         />
-        <SummaryCard
-          label="Estado"
-          value={isClosed ? "Cerrado" : "Abierto"}
-          statusBadge={isClosed ? "closed" : "open"}
-        />
       </div>
 
       {/* No profile/unit guard */}
@@ -353,12 +582,12 @@ export function MonthlyControlPage() {
 
       {/* Main two-column layout */}
       {profileId && businessUnitId && (
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-[2.05fr_1fr]">
           {/* Left: Purchases */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="space-y-4">
             <Card className="flex flex-col">
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                <h2 className="text-sm font-semibold">Compras del mes</h2>
+                <h2 className="text-[1.05rem] font-semibold tracking-tight">Compras del mes</h2>
                 <Button
                   disabled={isClosed || !profileId || !businessUnitId}
                   onClick={openNewPurchase}
@@ -370,8 +599,12 @@ export function MonthlyControlPage() {
               </div>
 
               {isLoading ? (
-                <div className="flex min-h-[200px] items-center justify-center text-sm text-muted-foreground">
-                  Cargando...
+                <div className="space-y-3 p-4">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
                 </div>
               ) : purchases.length === 0 ? (
                 <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 px-4 text-center">
@@ -392,10 +625,20 @@ export function MonthlyControlPage() {
                 </div>
               ) : (
                 <>
+                  <TableToolbar className="border-b-0 bg-transparent px-4 pb-2 pt-0">
+                    <TableToolbarField className="min-w-[240px] flex-1" label="Buscar">
+                      <input
+                        className="field h-9"
+                        onChange={(event) => setPurchaseSearch(event.target.value)}
+                        placeholder="Proveedor, factura, RUC o pago…"
+                        value={purchaseSearch}
+                      />
+                    </TableToolbarField>
+                  </TableToolbar>
                   <div className="overflow-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-border bg-muted/40">
+                        <tr className="border-b border-border bg-surface">
                           <th className="h-9 px-4 text-left text-xs font-medium text-muted-foreground">
                             Fecha
                           </th>
@@ -415,7 +658,7 @@ export function MonthlyControlPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {purchases.map((p) => (
+                        {visiblePurchases.map((p) => (
                           <tr
                             className="hover:bg-muted/30 transition-colors"
                             key={p.id}
@@ -423,14 +666,14 @@ export function MonthlyControlPage() {
                             <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">
                               {format(new Date(`${p.purchaseDate}T12:00:00`), "dd/MM/yyyy")}
                             </td>
-                            <td className="px-4 py-2 font-medium max-w-[180px] truncate">
+                            <td className="max-w-[180px] px-4 py-2 font-medium truncate">
                               {p.supplierName}
                             </td>
                             <td className="px-4 py-2">
                               {p.invoiceNumber ? (
-                                <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                                <Badge variant="secondary">
                                   {p.invoiceNumber}
-                                </span>
+                                </Badge>
                               ) : (
                                 <span className="text-muted-foreground/40">\u2014</span>
                               )}
@@ -444,12 +687,13 @@ export function MonthlyControlPage() {
                             <td className="px-2 py-2">
                               <div className="flex justify-center gap-0.5">
                                 <Button
+                                  aria-label="Editar compra"
                                   disabled={isClosed}
                                   onClick={() => openEditPurchase(p)}
                                   size="sm"
                                   variant="ghost"
                                 >
-                                  <Pencil className="h-3.5 w-3.5" />
+                                  <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
                                 </Button>
                                 <ConfirmDialog
                                   confirmLabel="Eliminar"
@@ -458,11 +702,12 @@ export function MonthlyControlPage() {
                                   title="Eliminar compra"
                                 >
                                   <Button
+                                    aria-label="Eliminar compra"
                                     disabled={isClosed}
                                     size="sm"
                                     variant="ghost"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
                                   </Button>
                                 </ConfirmDialog>
                               </div>
@@ -472,9 +717,9 @@ export function MonthlyControlPage() {
                       </tbody>
                     </table>
                   </div>
-                  <div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-3">
+                  <div className="flex items-center justify-between border-t border-border bg-surface px-4 py-3">
                     <span className="text-xs text-muted-foreground">
-                      {purchases.length} {purchases.length === 1 ? "compra" : "compras"}
+                      {filteredPurchases.length} {filteredPurchases.length === 1 ? "compra" : "compras"}
                     </span>
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-semibold text-foreground">
@@ -485,16 +730,34 @@ export function MonthlyControlPage() {
                       </span>
                     </div>
                   </div>
+                  <TablePaginationControls
+                    itemLabel="compras"
+                    onPageChange={setPurchasePage}
+                    onPageSizeChange={setPurchasePageSize}
+                    page={currentPurchasePage}
+                    pageSize={purchasePageSize}
+                    pageSizeOptions={PAGE_SIZE_OPTIONS}
+                    totalItems={filteredPurchases.length}
+                  />
                 </>
               )}
             </Card>
           </div>
 
           {/* Right: Sale + Summary + Closing */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Sale input */}
             <Card className="p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Venta del mes</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[1.05rem] font-semibold tracking-tight">Venta del mes</h3>
+                <Button
+                  disabled={isClosed || isLoading || isSavingSale || !profileId || !businessUnitId}
+                  onClick={() => void saveSale()}
+                  size="sm"
+                >
+                  Guardar venta
+                </Button>
+              </div>
               <label className="block">
                 <span className="text-xs text-muted-foreground">Monto total</span>
                 <input
@@ -505,7 +768,7 @@ export function MonthlyControlPage() {
                     setSaleTotal(e.target.value);
                     setSaleMessage(null);
                   }}
-                  placeholder="0.00"
+                  placeholder="0.00…"
                   type="text"
                   value={saleTotal}
                 />
@@ -519,25 +782,18 @@ export function MonthlyControlPage() {
                     setSaleNota(e.target.value);
                     setSaleMessage(null);
                   }}
-                  placeholder="Ej: ventas gamarra"
+                  placeholder="Ej: ventas gamarra…"
                   type="text"
                   value={saleNota}
                 />
               </label>
               <div className="flex items-center gap-3">
-                <Button
-                  disabled={isClosed || isLoading || isSavingSale || !profileId || !businessUnitId}
-                  onClick={() => void saveSale()}
-                  size="sm"
-                >
-                  Guardar venta
-                </Button>
                 {saleMessage && (
-                  <span className={cn(
+                  <span aria-live="polite" className={cn(
                     "text-xs font-medium",
                     saleMessage === "Venta guardada"
-                      ? "text-emerald-700"
-                      : "text-red-600",
+                      ? "text-success-foreground"
+                      : "text-danger-foreground",
                   )}>
                     {saleMessage}
                   </span>
@@ -546,39 +802,119 @@ export function MonthlyControlPage() {
             </Card>
 
             {/* Fiscal summary */}
-            <Card className="p-4 space-y-2.5">
-              <h3 className="text-sm font-semibold">Resumen del mes</h3>
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[1.05rem] font-semibold tracking-tight">Resumen del mes</h3>
+                <Button
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  onClick={() => {
+                    setAdjustOpen((current) => {
+                      if (!current) setTimeout(() => adjustRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                      return !current;
+                    });
+                  }}
+                  size="sm"
+                >
+                  Ajustar
+                </Button>
+              </div>
               <div className="space-y-1.5">
                 <SummaryRow label="Compras del mes" value={totalPurchases} />
                 <SummaryRow label="Saldo anterior" value={saldoAnterior} />
                 <SummaryRow label="Compra base" value={calc.compraBase} highlight />
                 <SummaryRow label="Venta del mes" value={saleAmount} />
-                <div className="my-1.5 border-t border-border" />
+                <Separator className="my-1.5" />
                 <SummaryRow label="Diferencia" value={calc.diferencia} sign />
                 <SummaryRow label="Base IGV" value={calc.baseIgv} manual={hasManualBaseIgv} />
                 <SummaryRow label="Saldo siguiente" value={calc.saldoSiguiente} manual={hasManualSaldo} />
-                <div className="my-1.5 border-t border-border" />
+                <Separator className="my-1.5" />
                 <SummaryRow label="Renta" value={calc.renta} manual={hasManualRenta} />
                 <SummaryRow label="IGV" value={calc.igvPago} manual={hasManualIgv} />
-                <div className="my-1 border-t border-border" />
+                <Separator className="my-1" />
                 <SummaryRow label="Total a pagar" value={calc.totalPagar} bold accent />
               </div>
+              {adjustOpen && (
+                <div ref={adjustRef}>
+                  <Separator className="my-2" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <AdjustField
+                      label="Base IGV"
+                      value={adjustForm.baseIgv}
+                      onChange={(value) => setAdjustForm((current) => ({ ...current, baseIgv: value }))}
+                      placeholder={moneyDisplay(baseAutoCalc.baseIgv)}
+                      disabled={isClosed || isLoading}
+                    />
+                    <AdjustField
+                      label="Saldo siguiente"
+                      value={adjustForm.saldoSiguiente}
+                      onChange={(value) => setAdjustForm((current) => ({ ...current, saldoSiguiente: value }))}
+                      placeholder={moneyDisplay(baseAutoCalc.saldoSiguienteSugerido)}
+                      disabled={isClosed || isLoading}
+                    />
+                    <AdjustField
+                      label="Renta"
+                      value={adjustForm.renta}
+                      onChange={(value) => setAdjustForm((current) => ({ ...current, renta: value }))}
+                      placeholder={moneyDisplay(baseAutoCalc.rentaSugerida)}
+                      disabled={isClosed || isLoading}
+                    />
+                    <AdjustField
+                      label="IGV"
+                      value={adjustForm.igvPago}
+                      onChange={(value) => setAdjustForm((current) => ({ ...current, igvPago: value }))}
+                      placeholder={moneyDisplay(baseAutoCalc.igvPagoSugerido)}
+                      disabled={isClosed || isLoading}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 pt-1">
+                    <p className="text-xs text-muted-foreground">
+                      Deja vacío un campo para usar el cálculo automático.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setAdjustForm({
+                            saldoSiguiente: "",
+                            renta: "",
+                            igvPago: "",
+                            baseIgv: "",
+                          });
+                          setSavedBaseIgvManual(null);
+                        }}
+                      >
+                        Limpiar
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => void saveSale()}
+                        disabled={isClosed || isLoading || isSavingSale}
+                      >
+                        Guardar ajustes
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </Card>
 
             {/* Closing */}
             <Card className="p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Cierre del mes</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[1.05rem] font-semibold tracking-tight">Cierre del mes</h3>
+                <Badge
+                  variant={
+                    isClosed ? "neutral" : readyToClose ? "success" : "warning"
+                  }
+                >
+                  {isClosed ? "Cerrado" : readyToClose ? "Listo" : "Pendiente"}
+                </Badge>
+              </div>
 
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Estado</span>
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
-                    isClosed
-                      ? "bg-stone-200 text-stone-700"
-                      : "bg-emerald-100 text-emerald-700",
-                  )}
-                >
+                <Badge variant={isClosed ? "neutral" : "success"}>
                   {isClosed ? (
                     <>
                       <Lock className="h-3 w-3" />
@@ -590,7 +926,7 @@ export function MonthlyControlPage() {
                       Abierto
                     </>
                   )}
-                </span>
+                </Badge>
               </div>
 
               <div className="space-y-1.5">
@@ -624,11 +960,11 @@ export function MonthlyControlPage() {
                   </ConfirmDialog>
                 )}
                 {isClosing && (
-                  <span className="text-xs text-muted-foreground">Procesando...</span>
+                  <span className="text-xs text-muted-foreground">Procesando…</span>
                 )}
               </div>
               {closeError && (
-                <p className="text-xs text-red-600">{closeError}</p>
+                <p className="text-xs text-danger-foreground">{closeError}</p>
               )}
             </Card>
           </div>
@@ -638,6 +974,24 @@ export function MonthlyControlPage() {
       {/* Purchase dialog */}
       <PurchaseDialog
         defaultDate={purchaseDateDefault}
+        draftValues={
+          purchaseSupplierFlow?.returnPage === "control"
+            ? purchaseSupplierFlow.values
+            : null
+        }
+        initialSupplierId={
+          purchaseSupplierFlow?.returnPage === "control"
+            ? purchaseSupplierFlow.supplierId
+            : null
+        }
+        onCancel={clearPurchaseSupplierFlow}
+        onCreateSupplierInCatalog={(draft) => {
+          startPurchaseSupplierFlow({
+            ...draft,
+            returnPage: "control",
+          });
+          onOpenSupplierCatalogFromPurchase();
+        }}
         onOpenChange={setPurchaseDialogOpen}
         onSubmit={savePurchase}
         open={purchaseDialogOpen}
@@ -666,25 +1020,29 @@ function SummaryCard({
   return (
     <div
       className={cn(
-        "rounded-lg border px-4 py-3 bg-white",
-        accent && "border-emerald-300",
-        statusBadge === "open" && "border-emerald-200",
-        statusBadge === "closed" && "border-stone-300",
+        "rounded-xl border bg-card px-4 py-3.5 shadow-sm",
+        accent && "border-success",
+        statusBadge === "open" && "border-success",
+        statusBadge === "closed" && "border-border",
         !accent && !statusBadge && "border-border",
       )}
     >
       <p className="text-xs text-muted-foreground">{label}</p>
       <p
         className={cn(
-          "mt-1 font-semibold tabular-nums",
+          "mt-2 font-semibold tabular-nums",
           muted && "text-muted-foreground",
-          accent && "text-emerald-700 text-lg",
-          statusBadge === "open" && "text-emerald-700",
-          statusBadge === "closed" && "text-stone-600",
+          accent && "text-lg text-success-foreground",
           !muted && !accent && !statusBadge && "text-foreground text-base",
         )}
       >
-        {value}
+        {statusBadge ? (
+          <Badge variant={statusBadge === "open" ? "success" : "neutral"}>
+            {value}
+          </Badge>
+        ) : (
+          value
+        )}
       </p>
     </div>
   );
@@ -712,24 +1070,17 @@ function SummaryRow({
       <span className="text-xs text-muted-foreground">{label}</span>
       <div className="flex items-center gap-1.5">
         {manual !== undefined && (
-          <span
-            className={cn(
-              "rounded-sm border px-1 text-[10px] font-medium leading-tight",
-              manual
-                ? "border-amber-200 bg-amber-50 text-amber-700"
-                : "border-transparent bg-stone-100 text-stone-500",
-            )}
-          >
+          <Badge variant={manual ? "warning" : "secondary"} className="text-[10px]">
             {manual ? "Manual" : "Calc"}
-          </span>
+          </Badge>
         )}
         <span
           className={cn(
             "tabular-nums text-sm",
             highlight && "font-semibold text-foreground",
             bold && "text-base font-bold text-foreground",
-            accent && "text-base font-bold text-emerald-700",
-            sign && value < 0 && "text-red-600",
+            accent && "text-base font-bold text-success-foreground",
+            sign && value < 0 && "text-danger-foreground",
           )}
         >
           <MoneyText value={value} />
@@ -739,15 +1090,44 @@ function SummaryRow({
   );
 }
 
+function AdjustField({
+  disabled,
+  label,
+  onChange,
+  placeholder,
+  value,
+}: {
+  disabled: boolean;
+  label: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <input
+        className="field mt-1 h-9"
+        disabled={disabled}
+        inputMode="decimal"
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        type="text"
+        value={value}
+      />
+    </label>
+  );
+}
+
 function CheckItem({ done, label }: { done: boolean; label: string }) {
   return (
     <div className="flex items-center gap-2 text-sm">
       {done ? (
-        <div className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100">
-          <Check className="h-3 w-3 text-emerald-600" />
+        <div className="flex h-4 w-4 items-center justify-center rounded-full bg-success">
+          <Check className="h-3 w-3 text-success-foreground" />
         </div>
       ) : (
-        <div className="h-4 w-4 rounded-full border border-stone-200" />
+        <div className="h-4 w-4 rounded-full border border-border" />
       )}
       <span className={done ? "text-foreground" : "text-muted-foreground"}>
         {label}
@@ -771,4 +1151,36 @@ function getDefaultPurchaseDate(month: number, year: number): string {
   }
 
   return `${year}-${String(month).padStart(2, "0")}-01`;
+}
+
+function resolveCurrentManualValue(
+  currentText: string,
+  savedValue: number | null,
+  suggestedValue: number,
+): number | null {
+  if (currentText.trim().length > 0) {
+    return parseMoney(currentText);
+  }
+
+  if (savedValue === null) {
+    return null;
+  }
+
+  return Math.abs(savedValue - suggestedValue) > 0.009 ? savedValue : null;
+}
+
+function resolveManualValue(
+  currentText: string,
+  savedValue: number,
+  suggestedValue: number,
+): number {
+  if (currentText.trim().length > 0) {
+    return parseMoney(currentText);
+  }
+
+  if (Math.abs(savedValue - suggestedValue) > 0.009) {
+    return savedValue;
+  }
+
+  return suggestedValue;
 }

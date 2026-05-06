@@ -1,77 +1,58 @@
+import { ChevronDown } from "lucide-react";
 import { useEffect } from "react";
 import { MonthYearSelector } from "./MonthYearSelector";
+import { Badge } from "./ui/badge";
 import { useAppStore } from "../stores/app-store";
-import { cn } from "../lib/utils";
 
 export function TopbarFilters() {
   const {
-    profiles,
     businessUnits,
-    profileId,
     businessUnitId,
     month,
     year,
     closingStatus,
-    setBusinessUnits,
     setBusinessUnitId,
     setClosingStatus,
     setPeriod,
-    setProfileId,
   } = useAppStore();
+  const profileId = useAppStore((state) => state.profileId);
 
   useEffect(() => {
-    if (!profileId || !businessUnitId) {
-      return;
-    }
-
+    if (!profileId || !businessUnitId) return;
     void window.metrion
       .getClosingStatus({ profileId, businessUnitId, month, year })
       .then(setClosingStatus);
   }, [businessUnitId, month, profileId, setClosingStatus, year]);
 
-  async function handleProfileChange(nextProfileId: number) {
-    setProfileId(nextProfileId);
-    const nextUnits = await window.metrion.listBusinessUnits(nextProfileId);
-    setBusinessUnits(nextUnits);
-    setBusinessUnitId(nextUnits[0]?.id ?? null);
-  }
-
   return (
-    <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
-      <select
-        className="h-9 max-w-40 rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-primary"
-        value={profileId ?? ""}
-        onChange={(event) => handleProfileChange(Number(event.target.value))}
-      >
-        {profiles.map((profile) => (
-          <option key={profile.id} value={profile.id}>
-            {profile.name}
-          </option>
-        ))}
-      </select>
-      <select
-        className="h-9 max-w-72 rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-primary"
-        value={businessUnitId ?? ""}
-        onChange={(event) => setBusinessUnitId(Number(event.target.value))}
-      >
-        {businessUnits.map((unit) => (
-          <option key={unit.id} value={unit.id}>
-            {unit.name}
-          </option>
-        ))}
-      </select>
-      <MonthYearSelector month={month} year={year} onChange={setPeriod} />
-      <span
-        className={cn(
-          "rounded-full px-2.5 py-1 text-xs font-semibold",
-          closingStatus === "closed"
-            ? "bg-red-100 text-red-700"
-            : "bg-emerald-100 text-emerald-700",
-        )}
-      >
+    <div className="flex min-w-0 flex-1 items-center justify-start gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="relative min-w-[248px] max-w-[360px]">
+          <select
+            aria-label="Unidad de negocio"
+            className="h-9 w-full appearance-none rounded-lg border border-border bg-card px-3.5 pr-9 text-[15px] font-medium tracking-tight text-foreground shadow-sm outline-none transition-colors hover:border-primary/30 focus-visible:border-primary/40"
+            value={businessUnitId ?? ""}
+            onChange={(event) => setBusinessUnitId(Number(event.target.value))}
+          >
+            {businessUnits.map((unit) => (
+              <option key={unit.id} value={unit.id}>
+                {unit.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            aria-hidden="true"
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+          />
+        </div>
+        <MonthYearSelector month={month} year={year} onChange={setPeriod} />
+      </div>
+      <div className="flex items-center gap-1.5 pl-1 text-xs text-muted-foreground">
+        <span>Estado :</span>
+        <Badge variant={closingStatus === "closed" ? "danger" : "success"} className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium">
         {closingStatus === "closed" ? "cerrado" : "abierto"}
-      </span>
+        </Badge>
+      </div>
     </div>
   );
 }
-

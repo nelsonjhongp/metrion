@@ -3,6 +3,7 @@ import { monthlySaleFormSchema } from "../../shared/sales-validation";
 import { calculateMonthlySummary } from "../../shared/monthly-calculations";
 import type { MonthlySaleFormValues } from "../../shared/types";
 import { MoneyText } from "../components/MoneyText";
+import { PageHeader } from "../components/PageHeader";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
@@ -216,15 +217,11 @@ export function SummaryPage() {
 
   return (
     <section className="max-w-2xl space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Resumen mensual</h1>
-          <p className="text-sm text-muted-foreground">Calculo de saldo y pago</p>
-        </div>
-        {isLoading && (
-          <span className="text-sm text-muted-foreground">Cargando...</span>
-        )}
-      </div>
+      <PageHeader
+        actions={isLoading ? <span className="text-sm text-muted-foreground">Cargando…</span> : undefined}
+        description="Ajustes y cálculo del periodo"
+        title="Resumen mensual"
+      />
 
       {error && (
         <p className="text-sm text-red-600">{error}</p>
@@ -312,7 +309,7 @@ export function SummaryPage() {
               className="field mt-1 h-20 resize-none py-2"
               disabled={isClosed || isLoading}
               onChange={(event) => handleFormChange("nota", event.target.value)}
-              placeholder="Opcional"
+              placeholder="Opcional…"
               value={form.nota}
             />
           </label>
@@ -327,7 +324,7 @@ export function SummaryPage() {
           Guardar
         </Button>
         {isSaving && (
-          <span className="text-sm text-muted-foreground">Guardando...</span>
+          <span className="text-sm text-muted-foreground">Guardando…</span>
         )}
       </div>
     </section>
@@ -378,7 +375,7 @@ function EditableMoney({
         disabled={disabled}
         inputMode="decimal"
         onChange={(event) => onChange(event.target.value)}
-        placeholder="0.00"
+        placeholder="0.00…"
         type="text"
         value={value}
       />

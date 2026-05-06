@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import { PageHeader } from "../components/PageHeader";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useAppStore } from "../stores/app-store";
@@ -121,9 +122,12 @@ export function SalesPage() {
   }
 
   return (
-    <section className="max-w-xl">
-      <h1 className="text-xl font-semibold tracking-tight">Ventas</h1>
-      <Card className="mt-4 space-y-4 p-4">
+    <section className="max-w-xl space-y-4">
+      <PageHeader
+        description="Registro mensual"
+        title="Ventas"
+      />
+      <Card className="space-y-4 p-4">
         <label className="block">
           <span className="text-sm font-medium">Total ventas del mes</span>
           <input
@@ -137,7 +141,7 @@ export function SalesPage() {
               }));
               setSavedMessage(null);
             }}
-            placeholder="0.00"
+            placeholder="0.00…"
             type="text"
             value={form.totalAmount}
           />
@@ -154,7 +158,7 @@ export function SalesPage() {
               }));
               setSavedMessage(null);
             }}
-            placeholder="Opcional"
+            placeholder="Opcional…"
             value={form.nota}
           />
         </label>
@@ -166,7 +170,7 @@ export function SalesPage() {
             Guardar
           </Button>
           {isLoading && (
-            <span className="text-sm text-muted-foreground">Cargando...</span>
+            <span className="text-sm text-muted-foreground">Cargando…</span>
           )}
           {savedMessage && (
             <span className="text-sm font-medium text-emerald-700">

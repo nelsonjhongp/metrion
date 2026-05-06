@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { MonthlyClosingChecklist } from "../../shared/types";
+import { PageHeader } from "../components/PageHeader";
+import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
-import { cn } from "../lib/utils";
 import { useAppStore } from "../stores/app-store";
 
 const emptyChecklist: MonthlyClosingChecklist = {
@@ -105,21 +106,17 @@ export function ClosingPage() {
   }
 
   return (
-    <section className="max-w-lg">
-      <h1 className="text-xl font-semibold tracking-tight">Cierre de mes</h1>
-      <Card className="mt-4 space-y-4 p-4">
+    <section className="max-w-lg space-y-4">
+      <PageHeader
+        description="Validación y estado del periodo"
+        title="Cierre de mes"
+      />
+      <Card className="space-y-4 p-4">
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">Estado</span>
-          <span
-            className={cn(
-              "rounded-full px-2.5 py-1 text-xs font-semibold",
-              isClosed
-                ? "bg-red-100 text-red-700"
-                : "bg-emerald-100 text-emerald-700",
-            )}
-          >
+          <Badge variant={isClosed ? "danger" : "success"}>
             {isClosed ? "cerrado" : "abierto"}
-          </span>
+          </Badge>
         </div>
         <label className="flex items-center gap-3 text-sm">
           <input
@@ -156,7 +153,7 @@ export function ClosingPage() {
             Reabrir mes
           </Button>
           {isLoading && (
-            <span className="text-sm text-muted-foreground">Cargando...</span>
+            <span className="text-sm text-muted-foreground">Cargando…</span>
           )}
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -164,4 +161,3 @@ export function ClosingPage() {
     </section>
   );
 }
-
